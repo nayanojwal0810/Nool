@@ -1,0 +1,13 @@
+app:
+  name: "Nool"
+  logging_level: "INFO"
+
+paths:
+  raw_data_dir: "data/raw"
+  interim_data_dir: "data/interim"
+  processed_data_dir: "data/processed"
+  model_cache_dir: ".cache/models"
+  artifact_dir: "data/manifests"
+
+models:
+  cache_dir: ".cache/models"

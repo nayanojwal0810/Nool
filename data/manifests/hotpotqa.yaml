@@ -1,0 +1,22 @@
+dataset:
+  name: "HotpotQA"
+  description: "Verified archive of HotpotQA benchmark dataset"
+  archive_file: "data/raw/hotpotqa.zip"
+  file_size_bytes: 654025350
+  sha256: "c62459dbc91d31329584507b1fa564b3b1abcee58800967113054ee0f5a15c62"
+  is_valid_zip: true
+  archive_contents:
+    - path: "hotpotqa/"
+      size_bytes: 0
+    - path: "hotpotqa/qrels/"
+      size_bytes: 0
+    - path: "hotpotqa/qrels/train.tsv"
+      size_bytes: 6117535
+    - path: "hotpotqa/qrels/test.tsv"
+      size_bytes: 532620
+    - path: "hotpotqa/qrels/dev.tsv"
+      size_bytes: 392210
+    - path: "hotpotqa/corpus.jsonl"
+      size_bytes: 2149313046
+    - path: "hotpotqa/queries.jsonl"
+      size_bytes: 27458928

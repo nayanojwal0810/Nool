@@ -1,0 +1,21 @@
+# Auto-detect text files and normalize line endings to LF on commit
+* text=auto eol=lf
+
+# Explicit text files
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+
+# Binary files
+*.zip binary
+*.tar.gz binary
+*.pkl binary
+*.db binary
+*.sqlite binary
+*.bin binary
+*.pt binary
+*.parquet binary

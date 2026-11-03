@@ -1,0 +1,89 @@
+# Byte-compiled / optimized / Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editor temporary files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Testing and linting caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Large datasets, raw downloads, archives
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+data/raw/*
+!data/raw/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Models, weights, and caches
+models/
+*.bin
+*.pt
+*.pth
+*.onnx
+*.safetensors
+.cache/
+
+# Embeddings and vector indexes
+*.index
+*.faiss
+*.hnsw
+*.embeddings
+embeddings/
+indexes/
+
+# SQLite runtime databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Logs
+*.log
+logs/
+
+# Temporary experiment outputs
+outputs/
+experiments/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Environment variable files
+.env
+.env.*
+!.env.example
+
+# Internal blueprints and planning documents
+*blueprint*
+Nool_Blueprint.txt
