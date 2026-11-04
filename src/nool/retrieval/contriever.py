@@ -131,8 +131,8 @@ def validate_corpus_file(
                     f"got {type(text_val).__name__}."
                 )
 
-            # Validate title if present
-            if "title" in record and record["title"] is not None:
+            # Validate title if present (must be a string; null is rejected)
+            if "title" in record:
                 title_val = record["title"]
                 if not isinstance(title_val, str):
                     raise ValueError(
@@ -203,6 +203,7 @@ def validate_checkpoint_shard(
             "pooling",
             "max_seq_length",
             "output_dtype",
+            "batch_sizes_used",
         }
         missing_keys = required_keys - set(data.files)
         if missing_keys:
@@ -310,6 +311,21 @@ def validate_checkpoint_shard(
         if not np.isfinite(embeddings).all():
             raise ValueError(
                 f"Shard {path.name} embeddings contain non-finite (NaN or Inf) values."
+            )
+
+        # 10. Batch sizes used metadata
+        batch_sizes_arr = data["batch_sizes_used"]
+        if batch_sizes_arr.dtype.kind not in ("i", "u"):
+            raise ValueError(
+                f"Shard {path.name} batch_sizes_used must be an integer array, "
+                f"got dtype {batch_sizes_arr.dtype}."
+            )
+        if batch_sizes_arr.size == 0:
+            raise ValueError(f"Shard {path.name} batch_sizes_used cannot be empty.")
+        if (batch_sizes_arr <= 0).any():
+            raise ValueError(
+                f"Shard {path.name} batch_sizes_used must contain only positive "
+                f"integers, got {batch_sizes_arr.tolist()}."
             )
 
 

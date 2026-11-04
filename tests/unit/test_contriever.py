@@ -106,6 +106,10 @@ def _create_synthetic_artifact(
         "embedding_sha256": emb_sha256,
         "pytorch_version": "2.15.0",
         "transformers_version": "5.22.1",
+        "batch_sizes_used": [16],
+        "shard_batch_sizes": [[16]],
+        "min_batch_size": 16,
+        "max_batch_size": 16,
         "created_at": "2026-11-04T00:00:00Z",
     }
     manifest_file = art_dir / "index_manifest.json"
@@ -401,7 +405,7 @@ def test_existing_bm25_retrieval_unaffected(tmp_path: Path) -> None:
 
 
 # ==============================================================================
-# New Regression Tests for Task 4 Correction Pass
+# Regression Tests for Task 4 Correction Passes
 # ==============================================================================
 
 
@@ -426,7 +430,7 @@ def test_checkpoint_unicode_serialization_with_allow_pickle_false(
         pooling="masked_mean",
         max_seq_length=DEFAULT_MAX_SEQ_LENGTH,
         output_dtype="float32",
-        batch_size_used=16,
+        batch_sizes_used=np.array([16], dtype=np.int64),
     )
 
     with np.load(str(shard_file), allow_pickle=False) as data:
@@ -465,6 +469,7 @@ def test_checkpoint_validation_rejects_incompatible_metadata(tmp_path: Path) -> 
             "pooling": "masked_mean",
             "max_seq_length": DEFAULT_MAX_SEQ_LENGTH,
             "output_dtype": "float32",
+            "batch_sizes_used": np.array([16], dtype=np.int64),
         }
         params.update(overrides)
         np.savez_compressed(str(shard_file), **params)
@@ -523,6 +528,7 @@ def test_checkpoint_validation_rejects_incorrect_document_ids(tmp_path: Path) ->
         pooling="masked_mean",
         max_seq_length=DEFAULT_MAX_SEQ_LENGTH,
         output_dtype="float32",
+        batch_sizes_used=np.array([16], dtype=np.int64),
     )
 
     # Mismatched ID at offset 1
@@ -554,10 +560,98 @@ def test_checkpoint_validation_rejects_non_finite_embeddings(tmp_path: Path) -> 
         pooling="masked_mean",
         max_seq_length=DEFAULT_MAX_SEQ_LENGTH,
         output_dtype="float32",
+        batch_sizes_used=np.array([16], dtype=np.int64),
     )
 
     with pytest.raises(ValueError, match="embeddings contain non-finite"):
         validate_checkpoint_shard(shard_file, 0, 1, ids, "sha")
+
+
+def test_checkpoint_batch_sizes_used_validation(tmp_path: Path) -> None:
+    """Verify validate_checkpoint_shard strictly validates batch_sizes_used."""
+    shard_file = tmp_path / "shard_bs.npz"
+    ids = ["doc_0", "doc_1"]
+    emb = np.zeros((2, DEFAULT_EMBEDDING_DIM), dtype=np.float32)
+    corpus_sha = "sha_corpus_123"
+
+    def _save_with_bs(batch_sizes: object) -> None:
+        params = {
+            "embeddings": emb,
+            "doc_ids": np.array(ids, dtype=str),
+            "start_idx": 0,
+            "end_idx": 2,
+            "source_corpus_sha256": corpus_sha,
+            "model_id": DEFAULT_MODEL_ID,
+            "model_revision": DEFAULT_MODEL_REVISION,
+            "pooling": "masked_mean",
+            "max_seq_length": DEFAULT_MAX_SEQ_LENGTH,
+            "output_dtype": "float32",
+        }
+        if batch_sizes is not None:
+            params["batch_sizes_used"] = batch_sizes
+        np.savez_compressed(str(shard_file), **params)
+
+    # 1. Valid multiple batch sizes (e.g. OOM reduced from 16 to 8)
+    _save_with_bs(np.array([8, 16], dtype=np.int64))
+    validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+    # 2. Missing batch_sizes_used
+    _save_with_bs(None)
+    with pytest.raises(ValueError, match="missing required fields:.*batch_sizes_used"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+    # 3. Empty batch_sizes_used array
+    _save_with_bs(np.array([], dtype=np.int64))
+    with pytest.raises(ValueError, match="batch_sizes_used cannot be empty"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+    # 4. Non-integer batch_sizes_used array (strings)
+    _save_with_bs(np.array(["16"], dtype=str))
+    with pytest.raises(ValueError, match="batch_sizes_used must be an integer array"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+    # 5. Non-integer batch_sizes_used array (floats)
+    _save_with_bs(np.array([16.5], dtype=float))
+    with pytest.raises(ValueError, match="batch_sizes_used must be an integer array"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+    # 6. Zero in batch_sizes_used
+    _save_with_bs(np.array([0, 16], dtype=np.int64))
+    with pytest.raises(ValueError, match="must contain only positive integers"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+    # 7. Negative integer in batch_sizes_used
+    _save_with_bs(np.array([-4, 16], dtype=np.int64))
+    with pytest.raises(ValueError, match="must contain only positive integers"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+
+def test_checkpoint_canonical_source_corpus_sha256(tmp_path: Path) -> None:
+    """Verify validate_checkpoint_shard enforces source_corpus_sha256 field."""
+    shard_file = tmp_path / "shard_canonical.npz"
+    ids = ["doc_0"]
+    emb = np.zeros((1, DEFAULT_EMBEDDING_DIM), dtype=np.float32)
+    corpus_sha = "canonical_sha_xyz"
+
+    # Shard with legacy alias corpus_sha256 instead of source_corpus_sha256 is rejected
+    np.savez_compressed(
+        str(shard_file),
+        embeddings=emb,
+        doc_ids=np.array(ids, dtype=str),
+        start_idx=0,
+        end_idx=1,
+        corpus_sha256=corpus_sha,  # Legacy alias
+        model_id=DEFAULT_MODEL_ID,
+        model_revision=DEFAULT_MODEL_REVISION,
+        pooling="masked_mean",
+        max_seq_length=DEFAULT_MAX_SEQ_LENGTH,
+        output_dtype="float32",
+        batch_sizes_used=np.array([16], dtype=np.int64),
+    )
+    with pytest.raises(
+        ValueError, match="missing required fields:.*source_corpus_sha256"
+    ):
+        validate_checkpoint_shard(shard_file, 0, 1, ids, corpus_sha)
 
 
 def test_validate_corpus_file_fail_fast_checksum_and_count(tmp_path: Path) -> None:
@@ -624,9 +718,57 @@ def test_validate_corpus_file_rejects_invalid_rows_and_types(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="Field 'text'.*must be a string"):
         validate_corpus_file(corpus_file)
 
-    # 7. Non-string title
+    # 7. Non-string title (number)
     corpus_file.write_text(
         '{"_id": "d1", "title": 42, "text": "valid text"}\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="Field 'title'.*must be a string"):
+        validate_corpus_file(corpus_file)
+
+    # 8. Title as null (None) must be rejected
+    corpus_file.write_text(
+        '{"_id": "d1", "title": null, "text": "valid text"}\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="Field 'title'.*must be a string"):
+        validate_corpus_file(corpus_file)
+
+
+def test_validate_corpus_file_title_handling(tmp_path: Path) -> None:
+    """Verify missing/string title accepted, while null/non-string rejected."""
+    corpus_file = tmp_path / "title_corpus.jsonl"
+
+    # Case A: Missing title is accepted
+    corpus_file.write_text('{"_id": "doc_no_title", "text": "Passage text."}\n')
+    recs = validate_corpus_file(corpus_file)
+    assert len(recs) == 1
+    assert recs[0]["_id"] == "doc_no_title"
+    assert "title" not in recs[0]
+
+    # Case B: Valid string title is accepted
+    corpus_file.write_text(
+        '{"_id": "doc_with_title", "title": "Good Title", "text": "Passage text."}\n'
+    )
+    recs2 = validate_corpus_file(corpus_file)
+    assert len(recs2) == 1
+    assert recs2[0]["title"] == "Good Title"
+
+    # Case C: title: null is rejected
+    corpus_file.write_text(
+        '{"_id": "doc_null_title", "title": null, "text": "Passage text."}\n'
+    )
+    with pytest.raises(ValueError, match="Field 'title'.*must be a string"):
+        validate_corpus_file(corpus_file)
+
+    # Case D: title: 100 (numeric) is rejected
+    corpus_file.write_text(
+        '{"_id": "doc_num_title", "title": 100, "text": "Passage text."}\n'
+    )
+    with pytest.raises(ValueError, match="Field 'title'.*must be a string"):
+        validate_corpus_file(corpus_file)
+
+    # Case E: title: ["list"] is rejected
+    corpus_file.write_text(
+        '{"_id": "doc_list_title", "title": ["A", "B"], "text": "Passage text."}\n'
     )
     with pytest.raises(ValueError, match="Field 'title'.*must be a string"):
         validate_corpus_file(corpus_file)
