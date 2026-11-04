@@ -408,11 +408,6 @@ def test_existing_bm25_retrieval_unaffected(tmp_path: Path) -> None:
     assert results[0].score > 0.0
 
 
-# ==============================================================================
-# Regression Tests for Task 4 Correction Passes
-# ==============================================================================
-
-
 def test_checkpoint_unicode_serialization_with_allow_pickle_false(
     tmp_path: Path,
 ) -> None:

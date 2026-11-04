@@ -138,7 +138,6 @@ def main() -> None:
             ),
             encoding="utf-8",
         )
-        print(f"Selected rank constant on dev: {selected}")
     else:
         selection = json.loads(selection_path.read_text(encoding="utf-8"))
         if (
@@ -197,7 +196,15 @@ def main() -> None:
         writer.writeheader()
         for detail in details:
             writer.writerow({**detail, "hybrid_ids": json.dumps(detail["hybrid_ids"])})
-    print(json.dumps(comparison, indent=2))
+    print(f"Hybrid retrieval: {args.split} ({len(rows)} queries, 50,000 passages)")
+    print(f"RRF rank constant: {selected}")
+    for key in ("recall@10", "mrr@10", "ndcg@10", "map@10"):
+        print(
+            f"{key}: BM25 {baseline['bm25'][key]:.4f}, "
+            f"Contriever {baseline['contriever'][key]:.4f}, "
+            f"Hybrid {metrics[key]:.4f}"
+        )
+    print(f"Detailed results: {out / f'{args.split}_summary.json'}")
 
 
 if __name__ == "__main__":

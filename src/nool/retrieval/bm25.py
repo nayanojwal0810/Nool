@@ -333,6 +333,7 @@ class BM25Retriever:
             searchable_texts,
             stopwords=stopwords,
             stemmer=stemmer_obj,
+            show_progress=False,
         )
 
         # 2. Lower-level BM25 indexing
@@ -491,6 +492,7 @@ class BM25Retriever:
             query,
             stopwords=self.stopwords,
             stemmer=self.stemmer,
+            show_progress=False,
         )
 
         # If query contains only stopwords or unknown tokens with no IDs

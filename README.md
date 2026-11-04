@@ -1,120 +1,44 @@
 # Nool
 
-An enterprise knowledge assistant that answers employee questions from company documents and safely reuses verified evidence.
+Nool is an enterprise knowledge assistant being built to answer questions from company documents and show its sources. Its main feature is safe evidence reuse: before using a passage found for an earlier question, Nool checks that the source is still current and the user can still access it.
 
-## Overview
+## How it works
 
-Nool is a local-first enterprise knowledge assistant designed to help employees find accurate answers from internal documentation, including HR policies, IT support guides, and operational procedures. The system focuses on reliable evidence retrieval, access control verification, document freshness checking, and grounded answer generation with clear citations.
+Nool's main search combines BM25, which matches words, and Contriever, which matches meaning. The planned application will check saved evidence first, search documents when needed, validate selected passages, and use them to write a cited answer. If the documents do not support an answer, it will say so.
 
-## Problem Being Addressed
+The application is planned in Python with a Streamlit website, SQLite for document and evidence records, and Qwen through Ollama for answers.
 
-Internal company knowledge is frequently fragmented across separate policies, handbooks, and intranet portals. Employees spend significant time locating relevant documentation, and existing automated assistants often generate ungrounded answers, ignore permission boundaries, or rely on outdated revisions of company documents. Nool addresses these challenges by maintaining an auditable evidence pipeline that validates document permissions, freshness, and relevance before generating responses.
+Search is working now. Document management, access checks, evidence memory, answer generation, and the Streamlit website are still in development. The website is intended for online demonstration with fictional company documents.
 
-## Intended Answer Flow
+## Retrieval results
 
-1. **Query Processing**: An employee submits a question through the user interface.
-2. **Hybrid Retrieval**: The retrieval engine searches indexed company documents using sparse lexical matching and dense semantic embeddings.
-3. **Evidence Validation**: Candidate passages are verified against access permissions, document currency (freshness), and relevance.
-4. **Evidence Memory**: Reusable evidence items are stored in an indexed evidence memory for efficient matching on related queries.
-5. **Answer Generation**: A local language model generates a concise response grounded strictly in the validated evidence passages, citing all relevant sources.
+We tested all three search methods on the same 50,000 HotpotQA passages and 500 test questions.
 
-## Main Planned Capabilities
+| Method | Recall@10 | nDCG@10 |
+|---|---:|---:|
+| BM25 | 0.859 | 0.836 |
+| Contriever | 0.825 | 0.811 |
+| Hybrid | 0.882 | 0.873 |
 
-- **Hybrid Retrieval (Implemented)**: BM25 and Contriever rankings are combined with reciprocal rank fusion on the fixed HotpotQA sample.
-- **Evidence Memory (Planned)**: Fast vector search indexing (HNSW) and SQLite storage for persistent, reusable evidence records.
-- **Access and Freshness Validation (Planned)**: Policy-based filtering to ensure users only see information permitted by their role and drawn from current document versions.
-- **Local Generation (Planned)**: Grounded response generation using a local Qwen language model without sending enterprise data to external APIs.
-- **Interactive Interface (Planned)**: Streamlit web application providing question-answering, citation inspection, and administrative overview.
-- **Evaluation Suite (Planned)**: Automated benchmarks measuring retrieval precision, recall, and answer faithfulness.
+These results measure search on a fixed sample. They do not measure answer quality or document security.
 
-## Technology Stack
+## Run the current code
 
-- **Language**: Python 3.11
-- **Configuration & Data Handling**: PyYAML, JSONL
-- **Search & Retrieval**: BM25, Contriever, reciprocal rank fusion
-- **Vector & Evidence Storage (Planned)**: HNSW, SQLite
-- **Model Execution (Planned)**: Local Qwen model
-- **User Interface (Planned)**: Streamlit
-- **Testing & Quality**: pytest, pytest-cov, Ruff
+Use Python 3.11. Install the project and run its tests:
 
-## Project Structure
-
-```text
-Nool/
-├── .github/
-│   └── workflows/
-│       └── quality.yml  # Quality and CI workflow
-├── configs/
-│   └── app.yaml         # Application configuration
-├── data/
-│   ├── raw/             # Unprocessed source data and archives
-│   ├── interim/         # Partially processed intermediate data
-│   ├── processed/       # Final tokenized and indexed datasets
-│   └── manifests/       # Dataset provenance and checksum records
-├── docs/
-│   └── system_overview.md # Architectural documentation
-├── notebooks/           # Exploratory analysis notebooks
-├── scripts/             # Operational and data processing scripts
-├── src/
-│   └── nool/            # Core package source code
-│       ├── config/      # Configuration loading and path resolution
-│       ├── data/        # Ingestion and preprocessing pipelines
-│       ├── retrieval/   # Lexical and dense retrieval components
-│       ├── evidence/    # Evidence memory and validation
-│       ├── security/    # Access control and permission filtering
-│       ├── generation/  # Answer synthesis and prompt templates
-│       ├── evaluation/  # Retrieval and generation metrics
-│       └── app/         # Web interface implementation
-└── tests/               # Unit, integration, and fixture tests
-    ├── unit/            # Unit tests
-    ├── integration/     # Integration tests
-    └── fixtures/        # Test fixtures and mock data
+```powershell
+git clone https://github.com/nayanojwal0810/Nool.git
+cd Nool
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev]"
+.\.venv\Scripts\python -m pytest
 ```
 
-## Setup
+Contriever search also needs the dense dependencies and a local copy of the passage embeddings. The [embedding guide](docs/embedding_guide.md) explains how to prepare them. Large data files, model weights, and indexes are excluded from Git.
 
-### Prerequisites
+## Project guides
 
-- Python 3.11
-- Git
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/nayanojwal0810/Nool.git
-   cd Nool
-   ```
-
-2. Create and activate a Python 3.11 virtual environment:
-   ```bash
-   python -m venv .venv
-   # On Windows:
-   .venv\Scripts\activate
-   # On Linux/macOS:
-   source .venv/bin/activate
-   ```
-
-3. Install the package in editable mode with development dependencies:
-   ```bash
-   pip install -e ".[dev]"
-   ```
-
-4. Run tests and lint checks:
-   ```bash
-   ruff check .
-   ruff format --check .
-   pytest
-   ```
-
-## Current Implementation Status
-
-The retrieval foundation is implemented:
-- Repository layout and directory structure configured.
-- Packaging metadata (`pyproject.toml`) and Python 3.11 environment defined.
-- Application configuration (`configs/app.yaml`) and configuration loader created.
-- Quality control toolchain (Ruff, pytest) and CI workflow established.
-- Initial unit test suite passing.
-- Raw dataset inspection and manifest generation completed.
-- BM25, Contriever, and hybrid retrieval run on the same 50,000-passage sample. The test results and limitations are in the [hybrid evaluation](docs/retrieval_hybrid.md).
-- Enterprise document ingestion, evidence memory, permission and freshness validation, model generation, and the Streamlit website remain to be implemented.
+- [System overview](docs/system_overview.md): current code and intended application.
+- [Dataset](docs/dataset.md): source data, fixed sample, and integrity checks.
+- [Retrieval evaluation](docs/retrieval_evaluation.md): methods, results, and limits.
+- [Embedding guide](docs/embedding_guide.md): Colab generation and local verification.
