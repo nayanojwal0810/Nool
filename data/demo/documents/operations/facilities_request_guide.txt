@@ -1,0 +1,26 @@
+# Facilities Request Guide
+
+Lindenmere Services
+Document ID: OPS-003
+Owner: Workplace Operations
+Version: 1
+Effective date: 2026-01-01
+Audience: All employees
+
+PURPOSE AND SCOPE
+Employees need one route for office repairs and access issues.
+
+POLICY
+Open a facilities request for non-urgent repairs, seating, or building access. For an immediate safety concern, call the front desk emergency number.
+
+PROCEDURE
+Describe the location, issue, and impact in the facilities portal. The facilities team assigns an owner and updates the request when work is scheduled.
+
+RESPONSIBILITIES AND FOLLOW-UP
+Facilities gives the requester a reference number and an expected update time. For a safety concern, staff should move away from the affected area first.
+
+EXAMPLE
+A loose cable in a walkway is an immediate safety issue. The employee moves away and calls reception; a routine desk repair can use the facilities portal.
+
+EXCEPTIONS
+Do not attempt electrical or building repairs without facilities authorization.

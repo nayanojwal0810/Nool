@@ -1,0 +1,26 @@
+# Help Desk Service Hours
+
+Lindenmere Services
+Document ID: IT-009
+Owner: Information Technology
+Version: 1
+Effective date: 2026-01-01
+Audience: All employees
+
+PURPOSE AND SCOPE
+Employees need a clear support route and response expectations.
+
+POLICY
+The service desk handles normal requests from 09:00 to 18:00 India Standard Time on business days. Critical security incidents use the emergency line at any time.
+
+PROCEDURE
+Open a ticket for routine access or device problems and include the affected service and error. For a critical incident, call the emergency line instead of waiting for a ticket response.
+
+RESPONSIBILITIES AND FOLLOW-UP
+Routine requests receive a ticket number for follow-up. The emergency line is reserved for active security incidents and major service outages.
+
+EXAMPLE
+A routine printer fault goes into the ticket queue during service hours. A suspected account compromise uses the emergency route even outside those hours.
+
+EXCEPTIONS
+Holiday coverage follows the on-call rota published in the service desk portal.

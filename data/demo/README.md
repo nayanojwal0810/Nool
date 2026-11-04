@@ -1,0 +1,9 @@
+# Lindenmere Services document collection
+
+Lindenmere Services is a fictional company used to exercise Nool's document and access workflows. The collection contains 45 current documents: 39 Markdown files, three text files, and three text-based PDFs. They cover people policies, IT, finance, onboarding, operations, and restricted administrator procedures. Names and rules are fictional; the documents are not legal or employment advice.
+
+`manifest.yaml` lists each document's stable ID, title, source file, owner, version, effective date, and allowed role. The source files use the same identifying details. Employees may access 38 documents. Four are for HR administrators and three are for IT administrators. The three known demo users are `employee_demo`, `hr_demo`, and `it_admin_demo`.
+
+`revisions/` contains four later policy versions for update demonstrations. `question_cases.jsonl` contains 110 cases with an expected answer or abstention, source document IDs, demo user, and scenario. It includes direct questions, paraphrases, questions needing two sources, near misses, restricted access, document updates, permission changes, and unsupported questions. The cases define a controlled evaluation set; they are not evidence that the application has passed those scenarios yet.
+
+Run `scripts/ingest_demo_documents.py` from the project root to validate and load the current collection into a local SQLite database. The database is excluded from Git. Ingestion keeps previous passages when a source changes and exposes only the current active version through `current_chunks`. The application will add permission checks before showing passages to a user or sending them to a model.

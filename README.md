@@ -8,7 +8,7 @@ Nool's main search combines BM25, which matches words, and Contriever, which mat
 
 The application will use Python, a Streamlit website, SQLite for document and evidence records, and Qwen through Ollama for answers.
 
-Search is working now. Document management, access checks, evidence memory, answer generation, and the website are still in development. The online demonstration will use realistic fictional company documents.
+Search and document ingestion are working now. The [fictional company collection](data/demo/README.md) has 45 documents and 110 prepared question cases. Access checks, evidence memory, answer generation, and the website are still in development.
 
 ## Retrieval results
 
@@ -42,3 +42,4 @@ Contriever search also needs the dense dependencies and a local copy of the pass
 - [Dataset](docs/dataset.md): source data, fixed sample, and integrity checks.
 - [Retrieval evaluation](docs/retrieval_evaluation.md): methods, results, and limits.
 - [Embedding guide](docs/embedding_guide.md): Colab generation and local verification.
+- [Company collection](data/demo/README.md): source documents, roles, and question cases.

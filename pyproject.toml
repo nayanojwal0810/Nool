@@ -16,6 +16,7 @@ dependencies = [
     "pyyaml>=6.0.1",
     "bm25s==0.3.16",
     "PyStemmer==3.1.0",
+    "pypdf>=5.0,<7.0",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,26 @@
+# Business Continuity Notice
+
+Lindenmere Services
+Document ID: OPS-006
+Owner: Workplace Operations
+Version: 1
+Effective date: 2026-01-01
+Audience: All employees
+
+PURPOSE AND SCOPE
+Teams need a simple response when an office or service is unavailable.
+
+POLICY
+During a declared disruption, follow the notice from the incident lead. Managers confirm staff safety and move approved work to the published alternate location or remote arrangement.
+
+PROCEDURE
+Check the company status page, tell the manager if you cannot work safely, and avoid sharing unverified updates externally.
+
+RESPONSIBILITIES AND FOLLOW-UP
+Managers confirm which work can continue and where staff should report. Employees should use the status page for updates rather than forwarding unverified messages.
+
+EXAMPLE
+If an office loses power, staff check the status page and contact their manager about safe work. Only the incident lead confirms when normal work can resume.
+
+EXCEPTIONS
+Only the incident lead may declare a return to normal operations.

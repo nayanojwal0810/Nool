@@ -6,11 +6,13 @@ Company policies change, and employees have different access rights. A saved ans
 
 The working code prepares a fixed HotpotQA sample and searches it with BM25, Contriever, or their combined ranking. BM25 finds matching words. Contriever turns text into vectors and finds passages with similar meaning. Reciprocal rank fusion combines their result positions into Nool's main search ranking. The retrieval benchmark measures how often each method finds known relevant passages.
 
+The [Lindenmere Services collection](../data/demo/README.md) adds 45 fictional company documents and 110 prepared question cases. Ingestion reads Markdown, plain text, and text-based PDFs. SQLite stores each document's current version, hash, status, allowed roles, and traceable passages. The documents are not yet connected to the hybrid search or an answer model.
+
 HotpotQA is used for search evaluation. It does not represent company documents or test access rules. Nool does not yet have a working question-to-answer website.
 
 ## Intended application
 
-The website will use 40–50 realistic fictional company documents and known demo users. A question will follow this path:
+The website will use the 45 fictional company documents and known demo users. A question will follow this path:
 
 1. Resolve the user's current access rights.
 2. Look for relevant passages in evidence memory.
@@ -21,7 +23,7 @@ The website will use 40–50 realistic fictional company documents and known dem
 
 The document store will keep a source ID, version, content hash, status, and allowed roles for each document. A passage will retain its source and location so a citation can point back to it. Document updates and permission changes will take effect before evidence is reused. The demo user selector will simulate identities; it will not serve as production authentication. The website's hosting and model runtime will be tested when the application is built.
 
-We will check the full application with 100–120 prepared questions. They will cover direct answers, reworded questions, missing answers, document updates, and access changes. Each case will name the expected source and outcome. This collection will test the application behavior that HotpotQA cannot test.
+The 110 prepared questions cover direct answers, reworded questions, missing answers, document updates, and access changes. Each case names the expected source and outcome. They will test application behavior that HotpotQA cannot test once the request flow is built.
 
 ## Code layout
 

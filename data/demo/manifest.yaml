@@ -1,0 +1,407 @@
+company: Lindenmere Services
+documents:
+- document_id: PEO-001
+  title: Annual Leave Policy
+  area: people
+  source: documents/people/annual_leave_policy.pdf
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-002
+  title: Sick Leave Procedure
+  area: people
+  source: documents/people/sick_leave_procedure.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-003
+  title: Public Holiday Calendar
+  area: people
+  source: documents/people/public_holiday_calendar.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-004
+  title: Flexible Work Policy
+  area: people
+  source: documents/people/flexible_work_policy.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-005
+  title: Workplace Conduct Policy
+  area: people
+  source: documents/people/workplace_conduct_policy.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-006
+  title: Performance Review Guide
+  area: people
+  source: documents/people/performance_review_guide.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-007
+  title: Benefits Enrollment Guide
+  area: people
+  source: documents/people/benefits_enrollment_guide.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-008
+  title: Learning Budget Policy
+  area: people
+  source: documents/people/learning_budget_policy.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: PEO-009
+  title: Employee Records Request
+  area: people
+  source: documents/people/employee_records_request.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-001
+  title: Account Provisioning Guide
+  area: it
+  source: documents/it/account_provisioning_guide.md
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-002
+  title: Password and MFA Standard
+  area: it
+  source: documents/it/password_and_mfa_standard.md
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-003
+  title: Managed Device Policy
+  area: it
+  source: documents/it/managed_device_policy.md
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-004
+  title: Remote Access Guide
+  area: it
+  source: documents/it/remote_access_guide.md
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-005
+  title: Security Incident Reporting
+  area: it
+  source: documents/it/security_incident_reporting.pdf
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-006
+  title: Data Classification Standard
+  area: it
+  source: documents/it/data_classification_standard.md
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-007
+  title: Approved Software Guide
+  area: it
+  source: documents/it/approved_software_guide.md
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-008
+  title: Backup and Restore Guide
+  area: it
+  source: documents/it/backup_and_restore_guide.md
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: IT-009
+  title: Help Desk Service Hours
+  area: it
+  source: documents/it/help_desk_service_hours.txt
+  owner: Information Technology
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-001
+  title: Expense Reimbursement Policy
+  area: finance
+  source: documents/finance/expense_reimbursement_policy.pdf
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-002
+  title: Domestic Travel Booking
+  area: finance
+  source: documents/finance/domestic_travel_booking.md
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-003
+  title: Meal Allowance on Travel
+  area: finance
+  source: documents/finance/meal_allowance_on_travel.md
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-004
+  title: Purchase Approval Limits
+  area: finance
+  source: documents/finance/purchase_approval_limits.md
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-005
+  title: Vendor Invoice Handling
+  area: finance
+  source: documents/finance/vendor_invoice_handling.md
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-006
+  title: Client Hospitality Rule
+  area: finance
+  source: documents/finance/client_hospitality_rule.md
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-007
+  title: Corporate Card Use
+  area: finance
+  source: documents/finance/corporate_card_use.md
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: FIN-008
+  title: Advance Payment Requests
+  area: finance
+  source: documents/finance/advance_payment_requests.md
+  owner: Finance
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ONB-001
+  title: New Hire Preparation
+  area: onboarding
+  source: documents/onboarding/new_hire_preparation.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ONB-002
+  title: First Week Orientation
+  area: onboarding
+  source: documents/onboarding/first_week_orientation.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ONB-003
+  title: Equipment Handover
+  area: onboarding
+  source: documents/onboarding/equipment_handover.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ONB-004
+  title: Role Change Checklist
+  area: onboarding
+  source: documents/onboarding/role_change_checklist.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ONB-005
+  title: Employee Exit Procedure
+  area: onboarding
+  source: documents/onboarding/employee_exit_procedure.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ONB-006
+  title: Contractor Start and End
+  area: onboarding
+  source: documents/onboarding/contractor_start_and_end.md
+  owner: People Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: OPS-001
+  title: Meeting and Decision Records
+  area: operations
+  source: documents/operations/meeting_and_decision_records.md
+  owner: Workplace Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: OPS-002
+  title: Document Naming and Retention
+  area: operations
+  source: documents/operations/document_naming_and_retention.md
+  owner: Workplace Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: OPS-003
+  title: Facilities Request Guide
+  area: operations
+  source: documents/operations/facilities_request_guide.txt
+  owner: Workplace Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: OPS-004
+  title: Visitor Access Procedure
+  area: operations
+  source: documents/operations/visitor_access_procedure.md
+  owner: Workplace Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: OPS-005
+  title: Internal Request Routing
+  area: operations
+  source: documents/operations/internal_request_routing.md
+  owner: Workplace Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: OPS-006
+  title: Business Continuity Notice
+  area: operations
+  source: documents/operations/business_continuity_notice.txt
+  owner: Workplace Operations
+  allowed_roles:
+  - employee
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ADM-001
+  title: HR Case Intake Procedure
+  area: restricted
+  source: documents/restricted/hr_case_intake_procedure.md
+  owner: People Operations
+  allowed_roles:
+  - hr_admin
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ADM-002
+  title: Payroll Correction Control
+  area: restricted
+  source: documents/restricted/payroll_correction_control.md
+  owner: People Operations
+  allowed_roles:
+  - hr_admin
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ADM-003
+  title: Employee Investigation Records
+  area: restricted
+  source: documents/restricted/employee_investigation_records.md
+  owner: People Operations
+  allowed_roles:
+  - hr_admin
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ADM-004
+  title: Benefits Exception Review
+  area: restricted
+  source: documents/restricted/benefits_exception_review.md
+  owner: People Operations
+  allowed_roles:
+  - hr_admin
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ADM-005
+  title: Privileged Access Review
+  area: restricted
+  source: documents/restricted/privileged_access_review.md
+  owner: Information Technology
+  allowed_roles:
+  - it_admin
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ADM-006
+  title: Device Recovery Procedure
+  area: restricted
+  source: documents/restricted/device_recovery_procedure.md
+  owner: Information Technology
+  allowed_roles:
+  - it_admin
+  version: 1
+  effective_date: '2026-01-01'
+- document_id: ADM-007
+  title: Security Alert Triage
+  area: restricted
+  source: documents/restricted/security_alert_triage.md
+  owner: Information Technology
+  allowed_roles:
+  - it_admin
+  version: 1
+  effective_date: '2026-01-01'

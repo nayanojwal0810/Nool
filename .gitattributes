@@ -19,3 +19,4 @@
 *.bin binary
 *.pt binary
 *.parquet binary
+*.pdf binary
