@@ -6,7 +6,7 @@ Company policies change, and employees have different access rights. A saved ans
 
 The working code prepares a fixed HotpotQA sample and searches it with BM25, Contriever, or their combined ranking. BM25 finds matching words. Contriever turns text into vectors and finds passages with similar meaning. Reciprocal rank fusion combines their result positions into Nool's main search ranking. The retrieval benchmark measures how often each method finds known relevant passages.
 
-The [Lindenmere Services collection](../data/demo/README.md) adds 45 fictional company documents and 110 prepared question cases. Ingestion reads Markdown, plain text, and text-based PDFs. SQLite stores each document's current version, hash, status, allowed roles, and traceable passages. The documents are not yet connected to the hybrid search or an answer model.
+The [Lindenmere Services collection](../data/demo/README.md) adds 45 fictional company documents and 110 prepared question cases. Ingestion reads Markdown, plain text, and text-based PDFs. SQLite stores each document's current version, hash, status, allowed roles, and traceable passages. The company search path combines BM25 and Contriever passage rankings, checks the live role and document record, and blocks search if its index is outdated. The Contriever index still needs to be built on the company collection before real company retrieval can be measured.
 
 HotpotQA is used for search evaluation. It does not represent company documents or test access rules. Nool does not yet have a working question-to-answer website.
 
