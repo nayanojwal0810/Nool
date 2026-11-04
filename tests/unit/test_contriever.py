@@ -625,6 +625,16 @@ def test_checkpoint_batch_sizes_used_validation(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="must contain only positive integers"):
         validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
 
+    # 8. Two-dimensional batch_sizes_used array
+    _save_with_bs(np.array([[8, 16]], dtype=np.int64))
+    with pytest.raises(ValueError, match="batch_sizes_used must be 1D"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
+    # 9. Duplicate values in batch_sizes_used
+    _save_with_bs(np.array([8, 8], dtype=np.int64))
+    with pytest.raises(ValueError, match="batch_sizes_used values must be unique"):
+        validate_checkpoint_shard(shard_file, 0, 2, ids, corpus_sha)
+
 
 def test_checkpoint_canonical_source_corpus_sha256(tmp_path: Path) -> None:
     """Verify validate_checkpoint_shard enforces source_corpus_sha256 field."""

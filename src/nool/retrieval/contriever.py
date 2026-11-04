@@ -320,12 +320,22 @@ def validate_checkpoint_shard(
                 f"Shard {path.name} batch_sizes_used must be an integer array, "
                 f"got dtype {batch_sizes_arr.dtype}."
             )
+        if batch_sizes_arr.ndim != 1:
+            raise ValueError(
+                f"Shard {path.name} batch_sizes_used must be 1D, "
+                f"got {batch_sizes_arr.ndim}D."
+            )
         if batch_sizes_arr.size == 0:
             raise ValueError(f"Shard {path.name} batch_sizes_used cannot be empty.")
         if (batch_sizes_arr <= 0).any():
             raise ValueError(
                 f"Shard {path.name} batch_sizes_used must contain only positive "
                 f"integers, got {batch_sizes_arr.tolist()}."
+            )
+        if len(np.unique(batch_sizes_arr)) != len(batch_sizes_arr):
+            raise ValueError(
+                f"Shard {path.name} batch_sizes_used values must be unique, "
+                f"got {batch_sizes_arr.tolist()}."
             )
 
 
