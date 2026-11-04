@@ -37,24 +37,18 @@ def test_load_config_values() -> None:
 
 
 def test_configured_data_paths_resolve() -> None:
-    """Verify that configured data paths resolve to existing directories."""
+    """Verify that configured data paths stay inside the project root."""
     config = load_config()
     paths = config["paths"]
 
     raw_path = resolve_path(paths["raw_data_dir"])
-    assert raw_path.is_absolute()
-    assert raw_path.exists()
-    assert raw_path.is_dir()
+    assert raw_path == get_project_root() / "data" / "raw"
 
     interim_path = resolve_path(paths["interim_data_dir"])
-    assert interim_path.is_absolute()
-    assert interim_path.exists()
-    assert interim_path.is_dir()
+    assert interim_path == get_project_root() / "data" / "interim"
 
     processed_path = resolve_path(paths["processed_data_dir"])
-    assert processed_path.is_absolute()
-    assert processed_path.exists()
-    assert processed_path.is_dir()
+    assert processed_path == get_project_root() / "data" / "processed"
 
     manifests_path = resolve_path(paths["artifact_dir"])
     assert manifests_path.is_absolute()
