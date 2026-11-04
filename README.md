@@ -43,3 +43,4 @@ Contriever search also needs the dense dependencies and a local copy of the pass
 - [Retrieval evaluation](docs/retrieval_evaluation.md): methods, results, and limits.
 - [Embedding guide](docs/embedding_guide.md): Colab generation and local verification.
 - [Company collection](data/demo/README.md): source documents, roles, and question cases.
+- [Company search Colab notebook](notebooks/company_search_colab.ipynb): GPU index build and source retrieval checks.
