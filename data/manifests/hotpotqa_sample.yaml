@@ -1,0 +1,16 @@
+sample:
+  source_archive_sha256: c62459dbc91d31329584507b1fa564b3b1abcee58800967113054ee0f5a15c62
+  corpus_sample_size: 50000
+  development_queries: 500
+  test_queries: 500
+  random_seed: 42
+  sampling_procedure: Reproducible query selection from dev and test qrels with fixed
+    random seed, guaranteed retention of all relevant positive passages, and streaming
+    reservoir sampling of background/negative passages.
+  positive_passages: 1981
+  negative_passages: 48019
+  qrels_counts:
+    dev: 1000
+    test: 1000
+  generation_date: '2026-11-04'
+  status: verified
