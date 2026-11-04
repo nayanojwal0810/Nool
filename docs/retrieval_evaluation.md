@@ -112,6 +112,7 @@ From the project root:
 | `--split` | `test` | Split to evaluate: `test` or `dev` |
 | `--top-k` | `10` | Rank cutoff (must be $\ge 10$) |
 | `--output-dir` | `outputs/retrieval_benchmark/<split>` | Output destination directory |
+| `--sample-manifest` | `data/manifests/hotpotqa_sample.yaml` | Path to sample manifest YAML |
 | `--corpus` | `configs/app.yaml` | Path to benchmark corpus JSONL |
 | `--queries` | `data/processed/hotpotqa_sample/queries.jsonl` | Path to queries JSONL |
 | `--qrels` | `data/processed/hotpotqa_sample/qrels/<split>.tsv` | Path to qrels TSV |

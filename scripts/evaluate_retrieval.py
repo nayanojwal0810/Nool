@@ -14,13 +14,13 @@ from typing import Any
 from nool.config import load_config, resolve_path
 from nool.evaluation.data import (
     BENCHMARK_CORPUS_SHA256,
-    BENCHMARK_CORPUS_SIZE,
-    BENCHMARK_SPLIT_QRELS,
-    BENCHMARK_SPLIT_QUERIES,
+    DEFAULT_SAMPLE_MANIFEST_PATH,
     compute_file_sha256,
+    extract_artifact_configurations,
     load_and_validate_corpus,
     load_and_validate_qrels,
     load_and_validate_queries,
+    load_sample_manifest,
     verify_retrievers_alignment,
 )
 from nool.evaluation.metrics import (
@@ -75,6 +75,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Directory to write benchmark outputs (default: outputs/.../<split>).",
+    )
+    parser.add_argument(
+        "--sample-manifest",
+        type=str,
+        default=DEFAULT_SAMPLE_MANIFEST_PATH,
+        help="Path to sample manifest YAML (default: manifests/hotpotqa_sample.yaml).",
     )
     parser.add_argument(
         "--corpus",
@@ -160,18 +166,39 @@ def main() -> None:
     output_dir = resolve_path(output_dir_str)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    manifest_path = resolve_path(args.sample_manifest)
     corpus_path = resolve_path(corpus_str)
     queries_path = resolve_path(queries_str)
     qrels_path = resolve_path(qrels_str)
     bm25_index_dir = resolve_path(bm25_index_str)
     contriever_art_dir = resolve_path(contriever_art_str)
 
-    # 2. Strict benchmark data validation
+    # 2. Load and validate sample manifest
+    try:
+        sample_manifest = load_sample_manifest(manifest_path)
+    except Exception as exc:
+        sys.stderr.write(f"Sample manifest validation failed: {exc}\n")
+        sys.exit(1)
+
+    sample_info = sample_manifest["sample"]
+    expected_count = sample_info["corpus_sample_size"]
+    if split == "test":
+        expected_q_count = sample_info["test_queries"]
+        expected_qr_count = sample_info["qrels_counts"]["test"]
+    elif split == "dev":
+        expected_q_count = sample_info["development_queries"]
+        expected_qr_count = sample_info["qrels_counts"]["dev"]
+    else:
+        sys.stderr.write(f"Unsupported split: {split}\n")
+        sys.exit(1)
+
+    # 3. Strict benchmark data validation
     print("=" * 80)
     print("Nool — BM25 vs Contriever Retrieval Benchmark Evaluation")
     print("=" * 80)
     print(f"Split:               {split}")
     print(f"Top K Cutoff:        {args.top_k}")
+    print(f"Sample Manifest:     {manifest_path}")
     print(f"Corpus:              {corpus_path}")
     print(f"Queries:             {queries_path}")
     print(f"Qrels:               {qrels_path}")
@@ -180,11 +207,10 @@ def main() -> None:
     print(f"Inference Device:    {device}")
     print(f"Output Directory:    {output_dir}")
     print("-" * 80)
-    print("Validating benchmark data files...")
+    print("Validating benchmark data files against sample manifest...")
 
     is_standard_sample = args.corpus is None
     expected_sha = BENCHMARK_CORPUS_SHA256 if is_standard_sample else None
-    expected_count = BENCHMARK_CORPUS_SIZE if is_standard_sample else None
 
     try:
         corpus_ids = load_and_validate_corpus(
@@ -200,9 +226,6 @@ def main() -> None:
         corpus_ids_set = set(corpus_ids)
         queries_ids_set = set(all_queries.keys())
 
-        expected_q_count = BENCHMARK_SPLIT_QUERIES if is_standard_sample else None
-        expected_qr_count = BENCHMARK_SPLIT_QRELS if is_standard_sample else None
-
         qrels_by_query, query_order = load_and_validate_qrels(
             qrels_path,
             valid_query_ids=queries_ids_set,
@@ -212,16 +235,16 @@ def main() -> None:
         )
         total_qrels_count = sum(len(docs) for docs in qrels_by_query.values())
         print(
-            f"  ✓ Qrels verified: {len(query_order)} queries, "
-            f"{total_qrels_count:,} positive judgments."
+            f"  ✓ Qrels verified: {len(query_order)} {split} queries, "
+            f"{total_qrels_count:,} positive judgments (matches manifest)."
         )
     except Exception as exc:
         sys.stderr.write(f"\nBenchmark Data Validation Failed: {exc}\n")
         sys.exit(1)
 
-    # 3. Load retrieval systems
+    # 4. Load retrieval systems and verify provenance
     print("-" * 80)
-    print("Loading retrieval systems...")
+    print("Loading retrieval systems and verifying corpus provenance...")
 
     try:
         print("  - Loading BM25 retriever...")
@@ -251,18 +274,25 @@ def main() -> None:
             f"({len(contriever_retriever.document_ids):,} passages)."
         )
 
-        # Verify exact 1:1 ID alignment between systems
+        # Verify exact 1:1 ID alignment and BM25/Contriever corpus provenance
         verify_retrievers_alignment(
             bm25_retriever,
             contriever_retriever,
+            expected_corpus_sha256=expected_sha,
             expected_count=expected_count,
         )
-        print("  ✓ Verified identical document ID ordering between retrievers.")
+        print("  ✓ Verified BM25 and Contriever corpus provenance and 1:1 ID ordering.")
+
+        # Extract and validate configuration metadata from manifests
+        bm25_cfg_summary, contriever_cfg_summary = extract_artifact_configurations(
+            bm25_retriever.manifest,
+            contriever_retriever.manifest,
+        )
     except Exception as exc:
         sys.stderr.write(f"\nRetriever Loading / Verification Failed: {exc}\n")
         sys.exit(1)
 
-    # 4. Warm-up pass (excluded from latency and metrics)
+    # 5. Warm-up pass (excluded from latency and metrics)
     print("-" * 80)
     print("Executing warm-up pass (excluded from evaluation metrics and latency)...")
     warmup_query = "warmup query to initialize caches and tokenizers"
@@ -270,9 +300,9 @@ def main() -> None:
     contriever_retriever.search(warmup_query, top_k=args.top_k)
     print("  ✓ Warm-up complete.")
 
-    # 5. Benchmark evaluation loop
+    # 6. Benchmark evaluation loop
     print("-" * 80)
-    print(f"Evaluating {len(query_order)} test queries on BM25 and Contriever...")
+    print(f"Evaluating {len(query_order)} {split} queries on BM25 and Contriever...")
 
     bm25_per_query: list[dict[str, Any]] = []
     contriever_per_query: list[dict[str, Any]] = []
@@ -341,14 +371,14 @@ def main() -> None:
         if idx % 100 == 0 or idx == len(query_order):
             print(f"  Processed {idx}/{len(query_order)} queries...")
 
-    # 6. Aggregate metrics and latency statistics
+    # 7. Aggregate metrics and latency statistics
     bm25_aggregates = compute_macro_averages(bm25_per_query)
     contriever_aggregates = compute_macro_averages(contriever_per_query)
 
     bm25_latency_stats = compute_latency_statistics(bm25_latencies)
     contriever_latency_stats = compute_latency_statistics(contriever_latencies)
 
-    # 7. Write per_query_results.csv
+    # 8. Write per_query_results.csv
     per_query_csv_path = output_dir / "per_query_results.csv"
     if per_query_rows:
         fieldnames = list(per_query_rows[0].keys())
@@ -357,7 +387,7 @@ def main() -> None:
             writer.writeheader()
             writer.writerows(per_query_rows)
 
-    # 8. Write comparison.csv
+    # 9. Write comparison.csv
     comparison_csv_path = output_dir / "comparison.csv"
     comparison_rows = [
         ("Recall@1", bm25_aggregates["recall@1"], contriever_aggregates["recall@1"]),
@@ -392,30 +422,21 @@ def main() -> None:
             else:
                 writer.writerow([metric_name, f"{bm25_val:.4f}", f"{dense_val:.4f}"])
 
-    # 9. Write summary.json
+    # 10. Write summary.json with actual manifest configurations
     summary_data = {
         "evaluation_split": split,
         "num_queries_evaluated": len(query_order),
         "num_qrels_rows": total_qrels_count,
         "corpus_size": len(corpus_ids),
         "corpus_sha256": compute_file_sha256(corpus_path),
-        "bm25_configuration": {
-            "method": bm25_retriever.manifest.get("bm25_method", "lucene"),
-            "k1": bm25_retriever.manifest.get("k1", 1.5),
-            "b": bm25_retriever.manifest.get("b", 0.75),
-            "stopwords": bm25_retriever.manifest.get("stopwords", "english"),
-            "stemming": bm25_retriever.manifest.get("stemmer_enabled", False),
+        "sample_manifest": {
+            "source_path": str(manifest_path),
+            "declared_corpus_sample_size": expected_count,
+            "declared_queries": expected_q_count,
+            "declared_qrels_count": expected_qr_count,
         },
-        "contriever_configuration": {
-            "model_id": contriever_retriever.manifest.get("model_id", DEFAULT_MODEL_ID),
-            "model_revision": contriever_retriever.manifest.get(
-                "model_revision", DEFAULT_MODEL_REVISION
-            ),
-            "pooling": contriever_retriever.manifest.get("pooling", "masked_mean"),
-            "similarity": contriever_retriever.manifest.get(
-                "similarity", "dot_product"
-            ),
-        },
+        "bm25_configuration": bm25_cfg_summary,
+        "contriever_configuration": contriever_cfg_summary,
         "device": device,
         "system_environment": {
             "platform": platform.platform(),
@@ -463,11 +484,12 @@ def main() -> None:
     with open(summary_json_path, "w", encoding="utf-8") as f:
         json.dump(summary_data, f, indent=2)
 
-    # 10. Console comparison output
+    # 11. Console comparison output using dynamic split name
+    split_title = split.capitalize()
     print("\n" + "=" * 80)
     print("Benchmark Evaluation Results")
     print("=" * 80)
-    print(f"Evaluated Test Queries:     {len(query_order)}")
+    print(f"Evaluated {split_title} Queries:     {len(query_order)}")
     print(f"Total Relevance Judgments:  {total_qrels_count:,}")
     print(f"Corpus Passages:            {len(corpus_ids):,}")
     print("Validation Status:          PASSED")

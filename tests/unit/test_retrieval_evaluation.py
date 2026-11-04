@@ -8,9 +8,12 @@ import pytest
 
 from nool.evaluation.data import (
     compute_file_sha256,
+    extract_artifact_configurations,
     load_and_validate_corpus,
     load_and_validate_qrels,
     load_and_validate_queries,
+    load_sample_manifest,
+    validate_bm25_provenance,
     verify_retrievers_alignment,
 )
 from nool.evaluation.metrics import (
@@ -210,8 +213,119 @@ def test_latency_statistics() -> None:
 
 
 # ==============================================================================
-# Data Validation Unit Tests
+# Data Validation & Provenance Tests
 # ==============================================================================
+
+
+def test_load_sample_manifest(tmp_path: Path) -> None:
+    """Test loading and validating sample manifest declared values."""
+    manifest_file = tmp_path / "sample.yaml"
+    manifest_file.write_text(
+        "sample:\n"
+        "  corpus_sample_size: 50000\n"
+        "  development_queries: 500\n"
+        "  test_queries: 500\n"
+        "  qrels_counts:\n"
+        "    dev: 1000\n"
+        "    test: 1000\n",
+        encoding="utf-8",
+    )
+
+    data = load_sample_manifest(manifest_file)
+    assert data["sample"]["corpus_sample_size"] == 50000
+    assert data["sample"]["test_queries"] == 500
+    assert data["sample"]["development_queries"] == 500
+    assert data["sample"]["qrels_counts"]["test"] == 1000
+    assert data["sample"]["qrels_counts"]["dev"] == 1000
+
+    # Missing file
+    with pytest.raises(FileNotFoundError, match="Sample manifest file not found"):
+        load_sample_manifest(tmp_path / "non_existent.yaml")
+
+    # Missing required integer field
+    bad_manifest = tmp_path / "bad_sample.yaml"
+    bad_manifest.write_text(
+        "sample:\n"
+        "  corpus_sample_size: 'not_an_int'\n"
+        "  development_queries: 500\n"
+        "  test_queries: 500\n"
+        "  qrels_counts: {dev: 1000, test: 1000}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError, match="must be a positive integer, got 'not_an_int'"
+    ):
+        load_sample_manifest(bad_manifest)
+
+
+def test_validate_bm25_provenance() -> None:
+    """Test BM25 source corpus provenance verification."""
+    retriever_mock = MagicMock()
+    valid_sha = "valid_sha_abcdef"
+    retriever_mock.manifest = {"source_corpus_sha256": valid_sha}
+
+    # 1. Matching SHA passes
+    validate_bm25_provenance(retriever_mock, expected_corpus_sha256=valid_sha)
+
+    # 2. Missing provenance field
+    retriever_mock.manifest = {}
+    with pytest.raises(ValueError, match="missing or has empty 'source_corpus_sha256'"):
+        validate_bm25_provenance(retriever_mock, expected_corpus_sha256=valid_sha)
+
+    # 3. Empty provenance string
+    retriever_mock.manifest = {"source_corpus_sha256": "   "}
+    with pytest.raises(ValueError, match="missing or has empty 'source_corpus_sha256'"):
+        validate_bm25_provenance(retriever_mock, expected_corpus_sha256=valid_sha)
+
+    # 4. Mismatched provenance SHA
+    retriever_mock.manifest = {"source_corpus_sha256": "tampered_sha_123"}
+    with pytest.raises(ValueError, match="source corpus SHA-256 provenance mismatch"):
+        validate_bm25_provenance(retriever_mock, expected_corpus_sha256=valid_sha)
+
+
+def test_extract_artifact_configurations() -> None:
+    """Test extracting actual settings from BM25 and Contriever manifests."""
+    bm25_manifest = {
+        "method": "lucene",
+        "k1": 1.5,
+        "b": 0.75,
+        "stopwords": "english",
+        "stemming": False,
+        "stemmer": None,
+        "document_count": 50000,
+    }
+    contriever_manifest = {
+        "model_id": "facebook/contriever",
+        "model_revision": "2bd46a25019aeea091fd42d1f0fd4801675cf699",
+        "pooling": "masked_mean",
+        "similarity_method": "dot_product",
+        "embedding_dimension": 768,
+        "normalize_embeddings": False,
+    }
+
+    bm25_cfg, dense_cfg = extract_artifact_configurations(
+        bm25_manifest, contriever_manifest
+    )
+    assert bm25_cfg["method"] == "lucene"
+    assert bm25_cfg["stemming"] is False
+    assert bm25_cfg["k1"] == 1.5
+    assert dense_cfg["similarity_method"] == "dot_product"
+    assert dense_cfg["model_id"] == "facebook/contriever"
+
+    # Missing required field in BM25 manifest
+    incomplete_bm25 = {"k1": 1.5}
+    with pytest.raises(
+        ValueError, match="BM25 manifest missing required configuration field: 'method'"
+    ):
+        extract_artifact_configurations(incomplete_bm25, contriever_manifest)
+
+    # Missing required field in Contriever manifest
+    incomplete_dense = {"model_id": "facebook/contriever"}
+    with pytest.raises(
+        ValueError,
+        match="Contriever manifest missing required configuration field",
+    ):
+        extract_artifact_configurations(bm25_manifest, incomplete_dense)
 
 
 def test_load_and_validate_corpus(tmp_path: Path) -> None:
@@ -251,6 +365,25 @@ def test_load_and_validate_corpus(tmp_path: Path) -> None:
         load_and_validate_corpus(dup_file, expected_sha256=None, expected_count=None)
 
 
+def test_load_and_validate_corpus_rejects_non_string_or_blank_id(
+    tmp_path: Path,
+) -> None:
+    """Test corpus rejects non-string IDs or empty/blank identifiers."""
+    # Integer ID rejected
+    int_id_file = tmp_path / "int_id.jsonl"
+    int_id_file.write_text('{"_id": 12345, "text": "Hello"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a string, got int"):
+        load_and_validate_corpus(int_id_file, expected_sha256=None, expected_count=None)
+
+    # Blank ID rejected
+    blank_id_file = tmp_path / "blank_id.jsonl"
+    blank_id_file.write_text('{"_id": "   ", "text": "Hello"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="Empty or blank '_id' field"):
+        load_and_validate_corpus(
+            blank_id_file, expected_sha256=None, expected_count=None
+        )
+
+
 def test_load_and_validate_queries(tmp_path: Path) -> None:
     """Test queries file validation, unique IDs, and empty text rejection."""
     queries_file = tmp_path / "queries.jsonl"
@@ -282,6 +415,23 @@ def test_load_and_validate_queries(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="Malformed or empty query text"):
         load_and_validate_queries(blank_file)
+
+
+def test_load_and_validate_queries_rejects_non_string_or_blank_id(
+    tmp_path: Path,
+) -> None:
+    """Test queries file rejects non-string or blank query IDs."""
+    int_id_file = tmp_path / "int_qid.jsonl"
+    int_id_file.write_text('{"_id": 999, "text": "What is AI?"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a string, got int"):
+        load_and_validate_queries(int_id_file)
+
+    blank_id_file = tmp_path / "blank_qid.jsonl"
+    blank_id_file.write_text(
+        '{"_id": "   ", "text": "What is AI?"}\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="Empty or blank '_id' in queries"):
+        load_and_validate_queries(blank_id_file)
 
 
 def test_load_and_validate_qrels(tmp_path: Path) -> None:
@@ -343,7 +493,7 @@ def test_load_and_validate_qrels(tmp_path: Path) -> None:
 
 
 def test_verify_retrievers_alignment() -> None:
-    """Test verify_retrievers_alignment checks document count and ordering."""
+    """Test verify_retrievers_alignment checks count, ordering, and provenance."""
     bm25_mock = MagicMock()
     contriever_mock = MagicMock()
 
@@ -353,10 +503,30 @@ def test_verify_retrievers_alignment() -> None:
     doc_mock_2.id = "doc_b"
 
     bm25_mock.documents = [doc_mock_1, doc_mock_2]
+    bm25_mock.manifest = {"source_corpus_sha256": "shared_sha_123"}
     contriever_mock.document_ids = ["doc_a", "doc_b"]
+    contriever_mock.manifest = {"source_corpus_sha256": "shared_sha_123"}
 
-    # Aligned passes
-    verify_retrievers_alignment(bm25_mock, contriever_mock, expected_count=2)
+    # Aligned passes with matching provenance
+    verify_retrievers_alignment(
+        bm25_mock,
+        contriever_mock,
+        expected_corpus_sha256="shared_sha_123",
+        expected_count=2,
+    )
+
+    # BM25 provenance mismatch
+    bm25_mock.manifest = {"source_corpus_sha256": "wrong_sha"}
+    with pytest.raises(
+        ValueError, match="BM25 source corpus SHA-256 provenance mismatch"
+    ):
+        verify_retrievers_alignment(
+            bm25_mock,
+            contriever_mock,
+            expected_corpus_sha256="shared_sha_123",
+            expected_count=2,
+        )
+    bm25_mock.manifest = {"source_corpus_sha256": "shared_sha_123"}
 
     # Count mismatch
     contriever_mock.document_ids = ["doc_a"]

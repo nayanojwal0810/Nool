@@ -1,11 +1,12 @@
 """Benchmark data loading and validation for retrieval evaluation.
 
 Validates:
-- Benchmark corpus checksum and unique document count.
-- Queries file integrity, unique IDs, and non-empty text.
-- Qrels alignment with valid query IDs and corpus IDs.
+- Benchmark sample manifest declaration and expected counts.
+- Benchmark corpus checksum, document count, and string IDs.
+- Queries file integrity, unique string IDs, and non-empty text.
+- Qrels alignment with valid query IDs, corpus IDs, and scores.
 - Qrels uniqueness (no duplicate (query_id, corpus_id) pairs).
-- Agreement with sample manifest counts.
+- BM25 source corpus provenance checksum.
 - Alignment of document IDs between BM25 and Contriever.
 """
 
@@ -13,16 +14,17 @@ import csv
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from nool.retrieval.bm25 import BM25Retriever
 from nool.retrieval.contriever import ContrieverRetriever
 
+DEFAULT_SAMPLE_MANIFEST_PATH = "data/manifests/hotpotqa_sample.yaml"
 BENCHMARK_CORPUS_SHA256 = (
     "c3970d91ebfd36d794066b42bd7acb85a744aabba2c97dd9a9bfde52d3dcbfbf"
 )
-BENCHMARK_CORPUS_SIZE = 50000
-BENCHMARK_SPLIT_QUERIES = 500
-BENCHMARK_SPLIT_QRELS = 1000
 
 
 def compute_file_sha256(file_path: Path | str, chunk_size: int = 1024 * 1024) -> str:
@@ -46,24 +48,187 @@ def compute_file_sha256(file_path: Path | str, chunk_size: int = 1024 * 1024) ->
     return hasher.hexdigest()
 
 
+def load_sample_manifest(manifest_path: Path | str) -> dict[str, Any]:
+    """Load and validate the benchmark sample manifest YAML file.
+
+    Args:
+        manifest_path: Path to hotpotqa_sample.yaml manifest.
+
+    Returns:
+        Parsed manifest dictionary.
+
+    Raises:
+        FileNotFoundError: If manifest_path does not exist.
+        ValueError: If manifest is malformed, missing required fields, or has
+            invalid types.
+    """
+    path = Path(manifest_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Sample manifest file not found: {path}")
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except Exception as exc:
+        raise ValueError(f"Malformed YAML in manifest {path}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Manifest root in {path} must be a dictionary.")
+
+    sample = data.get("sample")
+    if not isinstance(sample, dict):
+        raise ValueError(f"Manifest {path} missing required 'sample' mapping.")
+
+    required_int_fields = [
+        "corpus_sample_size",
+        "development_queries",
+        "test_queries",
+    ]
+    for field_name in required_int_fields:
+        val = sample.get(field_name)
+        if not isinstance(val, int) or isinstance(val, bool) or val <= 0:
+            raise ValueError(
+                f"Manifest field 'sample.{field_name}' in {path} must be a "
+                f"positive integer, got {val!r}."
+            )
+
+    qrels_counts = sample.get("qrels_counts")
+    if not isinstance(qrels_counts, dict):
+        raise ValueError(
+            f"Manifest field 'sample.qrels_counts' in {path} must be a dictionary."
+        )
+
+    for split_key in ["dev", "test"]:
+        split_count = qrels_counts.get(split_key)
+        if (
+            not isinstance(split_count, int)
+            or isinstance(split_count, bool)
+            or split_count <= 0
+        ):
+            raise ValueError(
+                f"Manifest 'sample.qrels_counts.{split_key}' in {path} must be a "
+                f"positive integer, got {split_count!r}."
+            )
+
+    return data
+
+
+def validate_bm25_provenance(
+    bm25_retriever: BM25Retriever,
+    expected_corpus_sha256: str,
+) -> None:
+    """Validate that BM25 index was built from the exact benchmark corpus.
+
+    Args:
+        bm25_retriever: Initialized BM25Retriever instance.
+        expected_corpus_sha256: Expected SHA-256 checksum of source corpus.
+
+    Raises:
+        ValueError: If source_corpus_sha256 is missing, empty, or does not match
+            expected_corpus_sha256.
+    """
+    manifest = getattr(bm25_retriever, "manifest", None)
+    if not isinstance(manifest, dict):
+        raise ValueError("BM25 retriever is missing manifest dictionary.")
+
+    corpus_sha = manifest.get("source_corpus_sha256")
+    if not isinstance(corpus_sha, str) or not corpus_sha.strip():
+        raise ValueError(
+            "BM25 index manifest is missing or has empty 'source_corpus_sha256' "
+            "provenance checksum."
+        )
+
+    if corpus_sha != expected_corpus_sha256:
+        raise ValueError(
+            f"BM25 source corpus SHA-256 provenance mismatch:\n"
+            f"  Expected: {expected_corpus_sha256}\n"
+            f"  Manifest: {corpus_sha}"
+        )
+
+
+def extract_artifact_configurations(
+    bm25_manifest: dict[str, Any],
+    contriever_manifest: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Extract and strictly validate configuration metadata from index manifests.
+
+    Args:
+        bm25_manifest: Parsed BM25 index_manifest.json dictionary.
+        contriever_manifest: Parsed Contriever index_manifest.json dictionary.
+
+    Returns:
+        Tuple of (bm25_config, contriever_config) dictionaries.
+
+    Raises:
+        ValueError: If manifests are not dictionaries or lack required schema fields.
+    """
+    if not isinstance(bm25_manifest, dict):
+        raise ValueError("BM25 manifest must be a dictionary.")
+    if not isinstance(contriever_manifest, dict):
+        raise ValueError("Contriever manifest must be a dictionary.")
+
+    required_bm25_fields = ["method", "k1", "b", "stopwords", "stemming"]
+    for field_name in required_bm25_fields:
+        if field_name not in bm25_manifest:
+            raise ValueError(
+                f"BM25 manifest missing required configuration field: '{field_name}'."
+            )
+
+    required_dense_fields = [
+        "model_id",
+        "model_revision",
+        "pooling",
+        "similarity_method",
+    ]
+    for field_name in required_dense_fields:
+        if field_name not in contriever_manifest:
+            raise ValueError(
+                "Contriever manifest missing required configuration field: "
+                f"'{field_name}'."
+            )
+
+    bm25_config = {
+        "method": bm25_manifest["method"],
+        "k1": bm25_manifest["k1"],
+        "b": bm25_manifest["b"],
+        "stopwords": bm25_manifest["stopwords"],
+        "stemming": bm25_manifest["stemming"],
+        "stemmer": bm25_manifest.get("stemmer"),
+    }
+
+    contriever_config = {
+        "model_id": contriever_manifest["model_id"],
+        "model_revision": contriever_manifest["model_revision"],
+        "pooling": contriever_manifest["pooling"],
+        "similarity_method": contriever_manifest["similarity_method"],
+        "embedding_dimension": contriever_manifest.get("embedding_dimension", 768),
+        "normalize_embeddings": contriever_manifest.get("normalize_embeddings", False),
+    }
+
+    return bm25_config, contriever_config
+
+
 def load_and_validate_corpus(
     corpus_path: Path | str,
     expected_sha256: str | None = BENCHMARK_CORPUS_SHA256,
-    expected_count: int | None = BENCHMARK_CORPUS_SIZE,
+    expected_count: int | None = None,
 ) -> list[str]:
     """Validate and extract document IDs from the benchmark corpus.
+
+    Strictly validates that document IDs are strings and preserves them exactly.
 
     Args:
         corpus_path: Path to corpus JSONL file.
         expected_sha256: Expected SHA-256 checksum (defaults to benchmark hash).
-        expected_count: Expected document count (defaults to 50,000).
+        expected_count: Expected document count (e.g. from manifest).
 
     Returns:
         List of document IDs in exact corpus order.
 
     Raises:
         FileNotFoundError: If corpus_path does not exist.
-        ValueError: If SHA-256 mismatch, count mismatch, duplicate IDs, or malformed.
+        ValueError: If SHA-256 mismatch, count mismatch, duplicate IDs, non-string
+            IDs, or malformed JSON.
     """
     path = Path(corpus_path)
     if not path.exists():
@@ -97,9 +262,20 @@ def load_and_validate_corpus(
             if not isinstance(record, dict):
                 raise ValueError(f"Corpus record at {path}:{line_no} must be a dict.")
 
-            doc_id = str(record.get("_id", "")).strip()
-            if not doc_id:
-                raise ValueError(f"Missing or empty '_id' field at {path}:{line_no}.")
+            if "_id" not in record:
+                raise ValueError(f"Missing '_id' field at {path}:{line_no}.")
+
+            doc_id = record["_id"]
+            if not isinstance(doc_id, str):
+                raise ValueError(
+                    f"Document '_id' at {path}:{line_no} must be a string, "
+                    f"got {type(doc_id).__name__}."
+                )
+
+            if not doc_id.strip():
+                raise ValueError(
+                    f"Empty or blank '_id' field in corpus at {path}:{line_no}."
+                )
 
             if doc_id in seen_ids:
                 raise ValueError(
@@ -127,6 +303,8 @@ def load_and_validate_queries(
 ) -> dict[str, str]:
     """Validate and load query records from queries.jsonl.
 
+    Strictly validates that query IDs are strings and preserves them exactly.
+
     Args:
         queries_path: Path to queries JSONL file.
 
@@ -135,7 +313,8 @@ def load_and_validate_queries(
 
     Raises:
         FileNotFoundError: If queries_path does not exist.
-        ValueError: If duplicate query IDs, missing text, or blank queries are found.
+        ValueError: If duplicate query IDs, non-string IDs, missing text, or blank
+            queries are found.
     """
     path = Path(queries_path)
     if not path.exists():
@@ -159,10 +338,19 @@ def load_and_validate_queries(
             if not isinstance(record, dict):
                 raise ValueError(f"Query record at {path}:{line_no} must be a dict.")
 
-            qid = str(record.get("_id", "")).strip()
-            if not qid:
+            if "_id" not in record:
+                raise ValueError(f"Missing '_id' in queries at {path}:{line_no}.")
+
+            qid = record["_id"]
+            if not isinstance(qid, str):
                 raise ValueError(
-                    f"Missing or empty '_id' in queries at {path}:{line_no}."
+                    f"Query '_id' at {path}:{line_no} must be a string, "
+                    f"got {type(qid).__name__}."
+                )
+
+            if not qid.strip():
+                raise ValueError(
+                    f"Empty or blank '_id' in queries at {path}:{line_no}."
                 )
 
             if qid in queries:
@@ -193,17 +381,17 @@ def load_and_validate_qrels(
     qrels_path: Path | str,
     valid_query_ids: set[str],
     valid_corpus_ids: set[str],
-    expected_query_count: int | None = BENCHMARK_SPLIT_QUERIES,
-    expected_qrel_count: int | None = BENCHMARK_SPLIT_QRELS,
+    expected_query_count: int | None = None,
+    expected_qrel_count: int | None = None,
 ) -> tuple[dict[str, dict[str, int]], list[str]]:
     """Validate and load relevance judgments from a TSV file.
 
     Args:
         qrels_path: Path to qrels TSV file (dev.tsv or test.tsv).
-        valid_query_ids: Set of valid query IDs loaded from queries.jsonl.
-        valid_corpus_ids: Set of valid document IDs loaded from corpus.jsonl.
-        expected_query_count: Expected count of distinct queries in the qrels split.
-        expected_qrel_count: Expected total count of qrel rows in the qrels split.
+        valid_query_ids: Set of valid string query IDs loaded from queries.jsonl.
+        valid_corpus_ids: Set of valid string document IDs loaded from corpus.jsonl.
+        expected_query_count: Optional expected count of distinct queries in the split.
+        expected_qrel_count: Optional expected total count of qrel rows in the split.
 
     Returns:
         Tuple of (qrels_by_query, query_order):
@@ -213,7 +401,7 @@ def load_and_validate_qrels(
     Raises:
         FileNotFoundError: If qrels_path does not exist.
         ValueError: If header is invalid, rows are malformed, query or corpus IDs
-            are missing, duplicate pairs exist, or row/query counts mismatch.
+            are invalid/missing, duplicate pairs exist, or row/query counts mismatch.
     """
     path = Path(qrels_path)
     if not path.exists():
@@ -247,23 +435,26 @@ def load_and_validate_qrels(
                     f"expected 3 columns, got {len(row)}"
                 )
 
-            qid = row[0].strip()
-            cid = row[1].strip()
-            score_str = row[2].strip()
+            raw_qid = row[0]
+            raw_cid = row[1]
+            raw_score = row[2]
 
-            if not qid:
-                raise ValueError(f"Missing query-id at {path}:{line_no}")
-            if not cid:
-                raise ValueError(f"Missing corpus-id at {path}:{line_no}")
+            if not isinstance(raw_qid, str) or not raw_qid.strip():
+                raise ValueError(f"Missing or blank query-id at {path}:{line_no}")
+            if not isinstance(raw_cid, str) or not raw_cid.strip():
+                raise ValueError(f"Missing or blank corpus-id at {path}:{line_no}")
+
+            qid = raw_qid.strip()
+            cid = raw_cid.strip()
 
             try:
-                score = int(score_str)
+                score = int(raw_score.strip())
             except ValueError as exc:
                 raise ValueError(
-                    f"Non-integer score '{score_str}' at {path}:{line_no}"
+                    f"Non-integer score '{raw_score}' at {path}:{line_no}"
                 ) from exc
 
-            # Validate ID existence
+            # Validate ID existence against known string sets
             if qid not in valid_query_ids:
                 raise ValueError(
                     f"Qrel query ID '{qid}' at {path}:{line_no} "
@@ -319,18 +510,32 @@ def load_and_validate_qrels(
 def verify_retrievers_alignment(
     bm25_retriever: BM25Retriever,
     contriever_retriever: ContrieverRetriever,
-    expected_count: int | None = BENCHMARK_CORPUS_SIZE,
+    expected_corpus_sha256: str | None = None,
+    expected_count: int | None = None,
 ) -> None:
-    """Verify that BM25 and Contriever share the exact same corpus and ID order.
+    """Verify that retrievers share the same corpus, provenance, and ID order.
 
     Args:
         bm25_retriever: Initialized BM25Retriever instance.
         contriever_retriever: Initialized ContrieverRetriever instance.
-        expected_count: Expected document count (50,000).
+        expected_corpus_sha256: Optional expected corpus SHA-256 to verify provenance.
+        expected_count: Expected document count (e.g. 50,000 from sample manifest).
 
     Raises:
-        ValueError: If passage count mismatches or document ID sequences differ.
+        ValueError: If passage count mismatches, document ID sequences differ,
+            or BM25/Contriever corpus provenance fails.
     """
+    if expected_corpus_sha256 is not None:
+        validate_bm25_provenance(bm25_retriever, expected_corpus_sha256)
+
+        contriever_sha = contriever_retriever.manifest.get("source_corpus_sha256")
+        if contriever_sha != expected_corpus_sha256:
+            raise ValueError(
+                f"Contriever source corpus SHA-256 provenance mismatch:\n"
+                f"  Expected: {expected_corpus_sha256}\n"
+                f"  Manifest: {contriever_sha}"
+            )
+
     bm25_doc_ids = [doc.id for doc in bm25_retriever.documents]
     contriever_doc_ids = contriever_retriever.document_ids
 
