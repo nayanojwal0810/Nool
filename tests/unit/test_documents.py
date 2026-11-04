@@ -13,7 +13,21 @@ from nool.data.collection import (
     load_collection,
     validate_questions,
 )
-from nool.data.documents import DocumentStore, Section, make_chunks, read_sections
+from nool.data.documents import (
+    DocumentStore,
+    Section,
+    make_chunks,
+    read_sections,
+    source_digest,
+)
+
+
+def test_text_hash_is_stable_across_line_endings(tmp_path: Path) -> None:
+    source = tmp_path / "policy.md"
+    source.write_bytes(b"# Policy\r\n\r\nRule\r\n")
+    first = source_digest(source)
+    source.write_bytes(b"# Policy\n\nRule\n")
+    assert source_digest(source) == first
 
 
 def test_chunk_ids_are_stable_and_sections_remain_separate() -> None:

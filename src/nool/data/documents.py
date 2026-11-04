@@ -4,12 +4,22 @@ import hashlib
 import json
 import re
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 SUPPORTED_SUFFIXES = {".md", ".txt", ".pdf"}
 WORD_PATTERN = re.compile(r"\S+")
+
+
+def source_digest(path: Path) -> str:
+    """Hash text consistently across Windows and Unix line endings."""
+    content = path.read_bytes()
+    if path.suffix.lower() in {".md", ".txt"}:
+        content = content.replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -166,11 +176,19 @@ class DocumentStore:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def ingest(
         self,
@@ -181,7 +199,7 @@ class DocumentStore:
         owner: str,
         allowed_roles: list[str] | tuple[str, ...],
     ) -> DocumentRecord:
-        """Create a document or advance its version when the source bytes change."""
+        """Create a document or advance its version when its content changes."""
         if not document_id.strip() or not title.strip() or not owner.strip():
             raise ValueError("Document ID, title, and owner are required")
         roles = tuple(sorted(set(allowed_roles)))
@@ -189,7 +207,7 @@ class DocumentStore:
             raise ValueError("At least one non-empty allowed role is required")
         path = Path(source_path).resolve()
         sections = read_sections(path)
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = source_digest(path)
         with self._connect() as connection:
             existing = connection.execute(
                 "SELECT version, content_hash, allowed_roles "

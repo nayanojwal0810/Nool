@@ -57,7 +57,8 @@ def test_company_search_blocks_restricted_and_stale_passages(tmp_path: Path) -> 
     employee = search.search("leave", "employee_demo")
     assert employee
     assert {item.document_id for item in employee} == {"OPEN"}
-    assert {item.chunk_id for item in employee} == {
+    assert len(employee) == 1
+    assert employee[0].chunk_id in {
         row["_id"] for row in records if row["metadata"]["document_id"] == "OPEN"
     }
     assert {item.document_id for item in search.search("payroll", "hr_demo")} == {

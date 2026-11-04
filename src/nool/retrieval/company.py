@@ -125,20 +125,29 @@ class CompanyHybridSearch:
             approved(self.bm25.search(query, top_k=depth)),
             approved(self.contriever.search(query, top_k=depth)),
             rank_constant=self.rank_constant,
-            top_k=top_k,
+            top_k=depth,
         )
-        return [
-            CompanySearchResult(
-                document_id=chunks[item.document_id].document_id,
-                title=item.title,
-                chunk_id=item.document_id,
-                section=chunks[item.document_id].section,
-                page_number=chunks[item.document_id].page_number,
-                version=chunks[item.document_id].version,
-                text=item.text,
-                score=item.score,
-                rank=item.rank,
-                sources=item.sources,
+        results = []
+        seen_documents: set[str] = set()
+        for item in fused:
+            chunk = chunks[item.document_id]
+            if chunk.document_id in seen_documents:
+                continue
+            seen_documents.add(chunk.document_id)
+            results.append(
+                CompanySearchResult(
+                    document_id=chunk.document_id,
+                    title=item.title,
+                    chunk_id=item.document_id,
+                    section=chunk.section,
+                    page_number=chunk.page_number,
+                    version=chunk.version,
+                    text=item.text,
+                    score=item.score,
+                    rank=len(results) + 1,
+                    sources=item.sources,
+                )
             )
-            for item in fused
-        ]
+            if len(results) == top_k:
+                break
+        return results
