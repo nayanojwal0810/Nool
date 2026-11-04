@@ -275,6 +275,8 @@ def test_stemmer_setting_consistency_between_indexing_and_search(
     tmp_path: Path,
 ) -> None:
     """Verify stemmer setting is stored in manifest, restored, and used in search."""
+    import Stemmer
+
     docs = [
         {
             "_id": "doc1",
@@ -290,18 +292,29 @@ def test_stemmer_setting_consistency_between_indexing_and_search(
     corpus_file = _write_corpus(tmp_path / "stem_corpus.jsonl", docs)
     stem_index_dir = tmp_path / "stem_index"
     no_stem_index_dir = tmp_path / "no_stem_index"
+    default_index_dir = tmp_path / "default_index"
 
     # 1. Build with stemming enabled ("english")
-    BM25Retriever.build(corpus_file, stem_index_dir, stemmer="english")
+    stemmed_built = BM25Retriever.build(corpus_file, stem_index_dir, stemmer="english")
+    assert isinstance(stemmed_built.stemmer, Stemmer.Stemmer)
+    assert stemmed_built.stemmer.stemWords(["connecting", "connects"]) == [
+        "connect",
+        "connect",
+    ]
+
     manifest = json.loads(
         (stem_index_dir / "index_manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["stemmer"] == "english"
     assert manifest["stemming"] is True
+    assert manifest["stemmer_library"] == "PyStemmer"
+    assert manifest["stemmer_library_version"] == "3.1.0"
 
     # Load in a fresh retriever
     stemmed_retriever = BM25Retriever.load(stem_index_dir)
-    assert stemmed_retriever.stemmer is not None
+    assert isinstance(stemmed_retriever.stemmer, Stemmer.Stemmer)
+    assert stemmed_retriever.stemmer_library == "PyStemmer"
+    assert stemmed_retriever.stemmer_library_version == "3.1.0"
 
     # Search with inflected word 'connecting':
     # With stemming, 'connecting' stems to 'connect', matching 'connects' in doc1
@@ -314,13 +327,15 @@ def test_stemmer_setting_consistency_between_indexing_and_search(
         assert kwargs["stemmer"] is stemmed_retriever.stemmer
         assert kwargs["stemmer"] is not None
 
-    # 2. Build with stemming disabled (default: None)
+    # 2. Build with stemming explicitly disabled (stemmer=None)
     BM25Retriever.build(corpus_file, no_stem_index_dir, stemmer=None)
     manifest_no_stem = json.loads(
         (no_stem_index_dir / "index_manifest.json").read_text(encoding="utf-8")
     )
     assert manifest_no_stem["stemmer"] is None
     assert manifest_no_stem["stemming"] is False
+    assert manifest_no_stem["stemmer_library"] is None
+    assert manifest_no_stem["stemmer_library_version"] is None
 
     no_stem_retriever = BM25Retriever.load(no_stem_index_dir)
     assert no_stem_retriever.stemmer is None
@@ -333,3 +348,120 @@ def test_stemmer_setting_consistency_between_indexing_and_search(
         assert mock_tokenize_none.call_count == 1
         _, kwargs_none = mock_tokenize_none.call_args
         assert kwargs_none["stemmer"] is None
+
+    # 3. Build with default parameters (no stemmer argument passed)
+    default_retriever = BM25Retriever.build(corpus_file, default_index_dir)
+    assert default_retriever.stemmer is None
+    manifest_default = json.loads(
+        (default_index_dir / "index_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest_default["stemmer"] is None
+    assert manifest_default["stemming"] is False
+    assert manifest_default["stemmer_library"] is None
+    assert manifest_default["stemmer_library_version"] is None
+
+
+def test_stemmer_argument_validation(sample_corpus: Path, tmp_path: Path) -> None:
+    """Verify invalid stemmer values, callables, and types are rejected."""
+    # Unsupported language string
+    with pytest.raises(ValueError, match="Unsupported stemmer"):
+        BM25Retriever.build(
+            sample_corpus, tmp_path / "stemmer_french", stemmer="french"
+        )
+
+    # Empty string or 'none' string
+    with pytest.raises(ValueError, match="Unsupported stemmer"):
+        BM25Retriever.build(
+            sample_corpus, tmp_path / "stemmer_none_str", stemmer="none"
+        )
+
+    # Arbitrary callable
+    with pytest.raises(ValueError, match="Invalid stemmer type"):
+        BM25Retriever.build(
+            sample_corpus,
+            tmp_path / "stemmer_callable",
+            stemmer=lambda words: words,  # type: ignore[arg-type]
+        )
+
+    # Arbitrary custom object
+    with pytest.raises(ValueError, match="Invalid stemmer type"):
+        BM25Retriever.build(
+            sample_corpus,
+            tmp_path / "stemmer_obj",
+            stemmer=object(),  # type: ignore[arg-type]
+        )
+
+    # Boolean or integer
+    with pytest.raises(ValueError, match="Invalid stemmer type"):
+        BM25Retriever.build(
+            sample_corpus,
+            tmp_path / "stemmer_bool",
+            stemmer=False,  # type: ignore[arg-type]
+        )
+
+
+def test_missing_pystemmer_raises_clear_error(
+    sample_corpus: Path, tmp_path: Path
+) -> None:
+    """Verify clear error is raised when PyStemmer cannot be imported."""
+    with patch.dict("sys.modules", {"Stemmer": None}):
+        with pytest.raises(
+            ImportError,
+            match="English stemming requires the 'PyStemmer' package",
+        ):
+            BM25Retriever.build(
+                sample_corpus,
+                tmp_path / "stemmer_missing",
+                stemmer="english",
+            )
+
+
+def test_stemmer_version_mismatch_and_provenance_validation(
+    sample_corpus: Path, tmp_path: Path
+) -> None:
+    """Verify mismatched versions and invalid provenance are rejected on load."""
+    index_dir = tmp_path / "provenance_index"
+    BM25Retriever.build(sample_corpus, index_dir, stemmer="english")
+
+    manifest_file = index_dir / "index_manifest.json"
+    manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+
+    # 1. Version mismatch
+    manifest_data["stemmer_library_version"] = "9.9.9"
+    manifest_file.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="PyStemmer version mismatch"):
+        BM25Retriever.load(index_dir)
+
+    # 2. Unsupported library name
+    manifest_data["stemmer_library_version"] = "3.1.0"
+    manifest_data["stemmer_library"] = "nltk"
+    manifest_file.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid or missing stemmer provenance"):
+        BM25Retriever.load(index_dir)
+
+
+def test_legacy_manifest_compatibility(sample_corpus: Path, tmp_path: Path) -> None:
+    """Verify legacy manifests handle stemming and reject unprovenanced stemming."""
+    index_dir = tmp_path / "legacy_index"
+    BM25Retriever.build(sample_corpus, index_dir, stemmer=None)
+
+    manifest_file = index_dir / "index_manifest.json"
+    manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+
+    # Legacy no-stemming manifest (missing stemmer_library fields)
+    del manifest_data["stemmer_library"]
+    del manifest_data["stemmer_library_version"]
+    manifest_file.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    loaded_retriever = BM25Retriever.load(index_dir)
+    assert loaded_retriever.stemmer is None
+
+    # Legacy manifest claiming stemming: true without valid provenance
+    manifest_data["stemming"] = True
+    manifest_data["stemmer"] = "english"
+    manifest_file.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid or missing stemmer provenance"):
+        BM25Retriever.load(index_dir)

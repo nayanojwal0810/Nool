@@ -53,65 +53,127 @@ def _compute_sha256(file_path: Path, chunk_size: int = 1024 * 1024) -> str:
     return hasher.hexdigest()
 
 
-class _SimpleEnglishStemmer:
-    """Lightweight English suffix stemmer used when PyStemmer is not installed."""
+def _get_pystemmer_version() -> str:
+    """Get the installed PyStemmer package version.
 
-    def stemWords(self, words: list[str]) -> list[str]:
-        """Stem a list of words."""
-        return [self.stem_word(w) for w in words]
+    Returns:
+        Version string of the installed PyStemmer package.
 
-    @staticmethod
-    def stem_word(word: str) -> str:
-        """Stem an individual English word using common suffix rules."""
-        w = word.lower()
-        if len(w) <= 3:
-            return w
-        if w.endswith("ies") and len(w) > 4:
-            return w[:-3] + "y"
-        if w.endswith("tion") and len(w) > 5:
-            return w[:-4] + "t"
-        if w.endswith("ing") and len(w) > 4:
-            base = w[:-3]
-            if len(base) > 2 and base[-1] == base[-2] and base[-1] not in "lsz":
-                return base[:-1]
-            return base
-        if w.endswith("ed") and len(w) > 3:
-            base = w[:-2]
-            if len(base) > 2 and base[-1] == base[-2] and base[-1] not in "lsz":
-                return base[:-1]
-            return base
-        if w.endswith("es") and len(w) > 3:
-            return w[:-2]
-        if w.endswith("s") and not w.endswith("ss") and len(w) > 2:
-            return w[:-1]
-        return w
+    Raises:
+        ImportError: If PyStemmer is not installed or package metadata is missing.
+    """
+    import importlib.metadata
+
+    try:
+        return importlib.metadata.version("PyStemmer")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ImportError(
+            "Package metadata for 'PyStemmer' not found. "
+            "Please install the pinned project dependency 'PyStemmer==3.1.0'."
+        ) from exc
 
 
-def resolve_stemmer(stemmer: Any) -> tuple[Any, str | None]:
-    """Resolve a stemmer setting into an executable stemmer and identifier."""
-    if stemmer is None or stemmer is False:
-        return None, None
+def resolve_stemmer(
+    stemmer: str | None,
+) -> tuple[Any, str | None, str | None, str | None]:
+    """Validate and resolve stemmer setting for index construction.
 
-    if isinstance(stemmer, str):
-        stemmer_name = stemmer.lower().strip()
-        if stemmer_name in ("none", "null", "disabled", ""):
-            return None, None
-        if stemmer_name == "english":
-            try:
-                import Stemmer
+    Args:
+        stemmer: None to disable stemming, or 'english' for English Snowball stemmer.
 
-                return Stemmer.Stemmer("english"), "english"
-            except ImportError:
-                return _SimpleEnglishStemmer(), "english"
-        raise ValueError(f"Unsupported stemmer identifier: '{stemmer}'")
+    Returns:
+        Tuple of (stemmer_obj, stemmer_id, stemmer_library, stemmer_library_version).
 
-    if hasattr(stemmer, "stemWords") or callable(stemmer):
-        identifier = getattr(stemmer, "name", None) or getattr(
-            stemmer, "__name__", "custom"
+    Raises:
+        ValueError: If stemmer is an unsupported string, callable, or invalid type.
+        ImportError: If English stemming is requested but PyStemmer is not installed.
+    """
+    if stemmer is None:
+        return None, None, None, None
+
+    if not isinstance(stemmer, str):
+        raise ValueError(
+            f"Invalid stemmer type: {type(stemmer).__name__}. "
+            "Only None or 'english' are supported."
         )
-        return stemmer, str(identifier)
 
-    raise ValueError(f"Invalid stemmer type: {type(stemmer)}")
+    canonical = stemmer.lower().strip()
+    if canonical != "english":
+        raise ValueError(
+            f"Unsupported stemmer: '{stemmer}'. "
+            "Only None (disabled) or 'english' are supported."
+        )
+
+    try:
+        import Stemmer
+    except ImportError as exc:
+        raise ImportError(
+            "English stemming requires the 'PyStemmer' package. "
+            "Please install the pinned project dependency 'PyStemmer==3.1.0'."
+        ) from exc
+
+    version = _get_pystemmer_version()
+    stemmer_obj = Stemmer.Stemmer("english")
+    return stemmer_obj, "english", "PyStemmer", version
+
+
+def _restore_stemmer_from_manifest(
+    manifest: dict[str, Any], index_dir: Path | str
+) -> Any:
+    """Restore stemmer instance from an index manifest, verifying provenance.
+
+    Args:
+        manifest: The parsed index_manifest.json content.
+        index_dir: Path to the index directory for contextual error messages.
+
+    Returns:
+        Stemmer instance if stemming is enabled, or None if disabled.
+
+    Raises:
+        ValueError: If manifest provenance is missing, invalid, or versions mismatch.
+        ImportError: If PyStemmer is not installed.
+    """
+    is_stemming = bool(manifest.get("stemming", False))
+    stemmer_id = manifest.get("stemmer")
+
+    if not is_stemming:
+        if stemmer_id is not None:
+            raise ValueError(
+                f"Contradictory index manifest in {index_dir}: "
+                f"'stemming' is false but 'stemmer' is {stemmer_id!r}."
+            )
+        return None
+
+    stemmer_lib = manifest.get("stemmer_library")
+    stemmer_ver = manifest.get("stemmer_library_version")
+
+    if stemmer_id != "english" or stemmer_lib != "PyStemmer" or not stemmer_ver:
+        raise ValueError(
+            f"Invalid or missing stemmer provenance in {index_dir}: "
+            f"stemmer={stemmer_id!r}, stemmer_library={stemmer_lib!r}, "
+            f"stemmer_library_version={stemmer_ver!r}. "
+            "Manifests with stemming enabled require valid PyStemmer provenance."
+        )
+
+    try:
+        import Stemmer
+    except ImportError as exc:
+        raise ImportError(
+            f"Index in {index_dir} was built with English stemming "
+            f"(PyStemmer {stemmer_ver}), but 'PyStemmer' is not installed. "
+            "Please install the pinned project dependency 'PyStemmer==3.1.0'."
+        ) from exc
+
+    installed_ver = _get_pystemmer_version()
+    if installed_ver != stemmer_ver:
+        raise ValueError(
+            f"PyStemmer version mismatch for index in {index_dir}: "
+            f"index was built with PyStemmer {stemmer_ver}, "
+            f"but current environment has PyStemmer {installed_ver}. "
+            "The index needs a matching environment or must be rebuilt."
+        )
+
+    return Stemmer.Stemmer("english")
 
 
 class BM25Retriever:
@@ -138,6 +200,8 @@ class BM25Retriever:
         self.stopwords = manifest.get("stopwords", "english")
         self.stemmer = stemmer
         self.stemmer_id = manifest.get("stemmer")
+        self.stemmer_library = manifest.get("stemmer_library")
+        self.stemmer_library_version = manifest.get("stemmer_library_version")
 
     @classmethod
     def build(
@@ -148,7 +212,7 @@ class BM25Retriever:
         k1: float = 1.5,
         b: float = 0.75,
         stopwords: str | list[str] | None = "english",
-        stemmer: Any = None,
+        stemmer: str | None = None,
         indexed_fields: Sequence[str] = ("title", "text"),
         overwrite: bool = False,
     ) -> "BM25Retriever":
@@ -161,7 +225,7 @@ class BM25Retriever:
             k1: Term frequency saturation parameter (default: 1.5).
             b: Document length normalization parameter (default: 0.75).
             stopwords: Stopwords configuration for tokenization (default: 'english').
-            stemmer: Optional stemmer (default: None, stemming disabled).
+            stemmer: Stemmer setting (default: None, or 'english' for PyStemmer).
             indexed_fields: Document fields to include in searchable text.
             overwrite: Whether to overwrite an existing index directory.
 
@@ -171,7 +235,8 @@ class BM25Retriever:
         Raises:
             FileNotFoundError: If corpus_path does not exist.
             FileExistsError: If index_dir exists and overwrite is False.
-            ValueError: If corpus is empty or contains malformed records.
+            ValueError: If corpus is empty, malformed, or stemmer is invalid.
+            ImportError: If English stemming is requested but PyStemmer is missing.
         """
         corpus_file = Path(corpus_path)
         out_dir = Path(index_dir)
@@ -256,7 +321,12 @@ class BM25Retriever:
             raise ValueError(f"Corpus file {corpus_file} contains no valid records.")
 
         corpus_sha256 = _compute_sha256(corpus_file)
-        stemmer_obj, stemmer_id = resolve_stemmer(stemmer)
+        (
+            stemmer_obj,
+            stemmer_id,
+            stemmer_library,
+            stemmer_library_version,
+        ) = resolve_stemmer(stemmer)
 
         # 1. Lower-level tokenization
         corpus_tokens = bm25s.tokenize(
@@ -299,6 +369,8 @@ class BM25Retriever:
             "stopwords": stopwords,
             "stemming": stemmer_id is not None,
             "stemmer": stemmer_id,
+            "stemmer_library": stemmer_library,
+            "stemmer_library_version": stemmer_library_version,
             "indexed_fields": list(indexed_fields),
             "document_count": len(documents),
             "source_corpus_filename": corpus_file.name,
@@ -383,8 +455,7 @@ class BM25Retriever:
                 f"{expected_count}, but documents.jsonl has {len(documents)}."
             )
 
-        saved_stemmer_id = manifest.get("stemmer")
-        stemmer_obj, _ = resolve_stemmer(saved_stemmer_id)
+        stemmer_obj = _restore_stemmer_from_manifest(manifest, dir_path)
 
         return cls(
             bm25=bm25_model,
