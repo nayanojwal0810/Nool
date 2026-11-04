@@ -63,9 +63,9 @@ Row $i$ of `passage_embeddings.npy` corresponds strictly to document $i$ in `doc
 ## 5. Offline Passage Encoding vs. Online Query Encoding
 
 - **Offline Passage Encoding (Colab GPU)**:
-  Encoding 50,000 passages requires evaluating millions of transformer tokens. Running this on a consumer laptop CPU would take hours or days and consume significant battery and thermal headroom. We run this heavy batch job once in Google Colab using a free GPU.
+  Passage encoding evaluates the entire passage corpus through the transformer model. This batch operation is executed offline using the provided Google Colab GPU workflow, generating the precomputed passage embeddings matrix.
 - **Online Query Encoding (Local CPU)**:
-  When an employee asks a single question, encoding a 10-word query takes less than 50 milliseconds on a standard CPU. The local Nool application loads the saved passage embeddings matrix and uses local CPU inference to encode user questions in real time.
+  When a user submits a question, encoding the single query is performed locally by the application. The local Nool application loads the precomputed passage embeddings matrix and uses local CPU inference to encode user queries in real time.
 
 ---
 

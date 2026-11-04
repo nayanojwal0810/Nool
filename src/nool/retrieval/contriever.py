@@ -12,6 +12,10 @@ DEFAULT_MODEL_ID = "facebook/contriever"
 DEFAULT_MODEL_REVISION = "2bd46a25019aeea091fd42d1f0fd4801675cf699"
 DEFAULT_EMBEDDING_DIM = 768
 DEFAULT_MAX_SEQ_LENGTH = 512
+BENCHMARK_CORPUS_SHA256 = (
+    "c3970d91ebfd36d794066b42bd7acb85a744aabba2c97dd9a9bfde52d3dcbfbf"
+)
+BENCHMARK_PASSAGE_COUNT = 50000
 ARTIFACT_SCHEMA_VERSION = "1.0.0"
 REQUIRED_ARTIFACT_FILES = [
     "passage_embeddings.npy",
@@ -41,14 +45,287 @@ def compute_sha256(file_path: Path | str, chunk_size: int = 1024 * 1024) -> str:
     return hasher.hexdigest()
 
 
+def validate_corpus_file(
+    corpus_path: Path | str,
+    expected_sha256: str | None = None,
+    expected_count: int | None = None,
+) -> list[dict[str, Any]]:
+    """Validate source corpus JSONL file integrity, types, and schema.
+
+    Args:
+        corpus_path: Path to source corpus JSONL file.
+        expected_sha256: Optional expected SHA-256 checksum to enforce.
+        expected_count: Optional expected passage count to enforce.
+
+    Returns:
+        List of parsed, validated document dictionaries in exact corpus order.
+
+    Raises:
+        FileNotFoundError: If corpus_path does not exist.
+        ValueError: If any validation rule fails.
+    """
+    path = Path(corpus_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Source corpus file not found: {path}")
+
+    actual_sha256 = compute_sha256(path)
+    if expected_sha256 is not None and actual_sha256 != expected_sha256:
+        raise ValueError(
+            f"Source corpus SHA-256 mismatch for {path}:\n"
+            f"  Expected: {expected_sha256}\n"
+            f"  Actual:   {actual_sha256}"
+        )
+
+    records: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    with open(path, encoding="utf-8") as f:
+        for line_no, raw_line in enumerate(f, 1):
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Malformed JSON in corpus at {path}:{line_no}: {exc}"
+                ) from exc
+
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"Corpus record at {path}:{line_no} must be a JSON object, "
+                    f"got {type(record).__name__}."
+                )
+
+            # Validate _id
+            if "_id" not in record:
+                raise ValueError(f"Missing '_id' in corpus record at {path}:{line_no}.")
+            doc_id = record["_id"]
+            if not isinstance(doc_id, str):
+                raise ValueError(
+                    f"Field '_id' at {path}:{line_no} must be a string, "
+                    f"got {type(doc_id).__name__}."
+                )
+            if not doc_id.strip():
+                raise ValueError(
+                    f"Field '_id' at {path}:{line_no} cannot be empty or whitespace."
+                )
+
+            if doc_id in seen_ids:
+                raise ValueError(
+                    f"Duplicate document ID found in corpus at {path}:{line_no}: "
+                    f"'{doc_id}'."
+                )
+            seen_ids.add(doc_id)
+
+            # Validate text
+            if "text" not in record:
+                raise ValueError(
+                    f"Missing 'text' in corpus record at {path}:{line_no}."
+                )
+            text_val = record["text"]
+            if not isinstance(text_val, str):
+                raise ValueError(
+                    f"Field 'text' at {path}:{line_no} must be a string, "
+                    f"got {type(text_val).__name__}."
+                )
+
+            # Validate title if present
+            if "title" in record and record["title"] is not None:
+                title_val = record["title"]
+                if not isinstance(title_val, str):
+                    raise ValueError(
+                        f"Field 'title' at {path}:{line_no} must be a string, "
+                        f"got {type(title_val).__name__}."
+                    )
+
+            records.append(record)
+
+    if expected_count is not None and len(records) != expected_count:
+        raise ValueError(
+            f"Corpus passage count mismatch for {path}: "
+            f"got {len(records)}, expected exactly {expected_count}."
+        )
+
+    return records
+
+
+def validate_checkpoint_shard(
+    shard_path: Path | str,
+    expected_start: int,
+    expected_end: int,
+    expected_doc_ids: list[str],
+    expected_corpus_sha256: str,
+    expected_model_id: str = DEFAULT_MODEL_ID,
+    expected_model_revision: str = DEFAULT_MODEL_REVISION,
+    expected_dim: int = DEFAULT_EMBEDDING_DIM,
+    expected_max_seq_length: int = DEFAULT_MAX_SEQ_LENGTH,
+) -> None:
+    """Validate that a checkpoint shard is complete, uncorrupted, and matches metadata.
+
+    Args:
+        shard_path: Path to shard .npz archive.
+        expected_start: Expected 0-based start index.
+        expected_end: Expected 0-based end index (exclusive).
+        expected_doc_ids: Expected document IDs in exact sequence.
+        expected_corpus_sha256: Expected SHA-256 of the source corpus.
+        expected_model_id: Locked model identifier.
+        expected_model_revision: Locked model revision SHA.
+        expected_dim: Locked embedding dimension (768).
+        expected_max_seq_length: Locked sequence length (512).
+
+    Raises:
+        FileNotFoundError: If shard file is missing.
+        ValueError: If any validation criterion fails.
+    """
+    path = Path(shard_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Checkpoint shard file not found: {path}")
+
+    expected_count = len(expected_doc_ids)
+    if expected_count != (expected_end - expected_start):
+        raise ValueError(
+            f"Inconsistent expected indices: start={expected_start}, "
+            f"end={expected_end}, but expected_doc_ids has {expected_count} items."
+        )
+
+    with np.load(str(path), allow_pickle=False) as data:
+        # 1. Required keys
+        required_keys = {
+            "embeddings",
+            "doc_ids",
+            "start_idx",
+            "end_idx",
+            "source_corpus_sha256",
+            "model_id",
+            "model_revision",
+            "pooling",
+            "max_seq_length",
+            "output_dtype",
+        }
+        missing_keys = required_keys - set(data.files)
+        if missing_keys:
+            raise ValueError(
+                f"Checkpoint shard {path.name} is missing required fields: "
+                f"{sorted(missing_keys)}."
+            )
+
+        # 2. Start and end indices
+        start_idx = int(data["start_idx"])
+        end_idx = int(data["end_idx"])
+        if start_idx != expected_start or end_idx != expected_end:
+            raise ValueError(
+                f"Shard {path.name} index mismatch: expected "
+                f"({expected_start}, {expected_end}), got ({start_idx}, {end_idx})."
+            )
+
+        # 3. Document IDs dtype and exact match
+        doc_ids_arr = data["doc_ids"]
+        if doc_ids_arr.dtype.kind not in ("U", "S"):
+            raise ValueError(
+                f"Shard {path.name} document IDs must be a NumPy string array, "
+                f"got dtype {doc_ids_arr.dtype}."
+            )
+
+        shard_doc_ids = [str(x) for x in doc_ids_arr]
+        if len(shard_doc_ids) != expected_count:
+            raise ValueError(
+                f"Shard {path.name} ID count mismatch: expected {expected_count}, "
+                f"got {len(shard_doc_ids)}."
+            )
+        if shard_doc_ids != expected_doc_ids:
+            for i, (actual_id, exp_id) in enumerate(
+                zip(shard_doc_ids, expected_doc_ids, strict=False)
+            ):
+                if actual_id != exp_id:
+                    raise ValueError(
+                        f"Shard {path.name} ID mismatch at offset {i}: "
+                        f"expected '{exp_id}', got '{actual_id}'."
+                    )
+
+        # 4. Source corpus SHA-256
+        corpus_sha = str(data["source_corpus_sha256"])
+        if corpus_sha != expected_corpus_sha256:
+            raise ValueError(
+                f"Shard {path.name} corpus SHA-256 mismatch: expected "
+                f"{expected_corpus_sha256}, got {corpus_sha}."
+            )
+
+        # 5. Model ID & revision
+        model_id = str(data["model_id"])
+        if model_id != expected_model_id:
+            raise ValueError(
+                f"Shard {path.name} model ID mismatch: expected "
+                f"'{expected_model_id}', got '{model_id}'."
+            )
+
+        model_rev = str(data["model_revision"])
+        if model_rev != expected_model_revision:
+            raise ValueError(
+                f"Shard {path.name} model revision mismatch: expected "
+                f"'{expected_model_revision}', got '{model_rev}'."
+            )
+
+        # 6. Pooling method
+        pooling = str(data["pooling"])
+        if pooling != "masked_mean":
+            raise ValueError(
+                f"Shard {path.name} pooling mismatch: expected 'masked_mean', "
+                f"got '{pooling}'."
+            )
+
+        # 7. Maximum sequence length
+        max_len = int(data["max_seq_length"])
+        if max_len != expected_max_seq_length:
+            raise ValueError(
+                f"Shard {path.name} max sequence length mismatch: expected "
+                f"{expected_max_seq_length}, got {max_len}."
+            )
+
+        # 8. Output dtype
+        out_dtype = str(data["output_dtype"])
+        if out_dtype != "float32":
+            raise ValueError(
+                f"Shard {path.name} output dtype mismatch: expected 'float32', "
+                f"got '{out_dtype}'."
+            )
+
+        # 9. Embedding matrix shape, dimension, dtype, and finiteness
+        embeddings = data["embeddings"]
+        if embeddings.ndim != 2:
+            raise ValueError(
+                f"Shard {path.name} embeddings must be 2D, got {embeddings.ndim}D."
+            )
+        if embeddings.shape != (expected_count, expected_dim):
+            raise ValueError(
+                f"Shard {path.name} embedding shape mismatch: expected "
+                f"({expected_count}, {expected_dim}), got {embeddings.shape}."
+            )
+        if embeddings.dtype != np.float32:
+            raise ValueError(
+                f"Shard {path.name} embedding dtype mismatch: expected float32, "
+                f"got {embeddings.dtype}."
+            )
+        if not np.isfinite(embeddings).all():
+            raise ValueError(
+                f"Shard {path.name} embeddings contain non-finite (NaN or Inf) values."
+            )
+
+
 def verify_artifact(
-    artifact_dir: Path | str, corpus_path: Path | str
+    artifact_dir: Path | str,
+    corpus_path: Path | str,
+    expected_passage_count: int | None = None,
+    expected_corpus_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Validate Contriever artifact files, manifest, checksums, and alignment.
 
     Args:
         artifact_dir: Path to directory containing artifact files.
         corpus_path: Path to source corpus JSONL file.
+        expected_passage_count: Optional expected passage count to enforce.
+        expected_corpus_sha256: Optional expected corpus SHA-256 to enforce.
 
     Returns:
         Summary metrics dictionary.
@@ -84,35 +361,109 @@ def verify_artifact(
     if not isinstance(manifest, dict):
         raise ValueError("index_manifest.json must be a JSON object.")
 
-    req_manifest_keys = [
+    required_manifest_keys = [
         "model_id",
         "model_revision",
         "embedding_dimension",
         "pooling",
+        "normalize_embeddings",
+        "output_dtype",
         "source_corpus_sha256",
         "embedding_sha256",
         "document_ids_sha256",
         "passage_count",
     ]
-    for key in req_manifest_keys:
+    for key in required_manifest_keys:
         if key not in manifest:
             raise ValueError(f"Missing required manifest field: '{key}'.")
 
-    expected_dim = int(manifest.get("embedding_dimension", DEFAULT_EMBEDDING_DIM))
+    if "similarity_method" not in manifest and "similarity" not in manifest:
+        raise ValueError(
+            "Missing required manifest field: 'similarity_method' or 'similarity'."
+        )
+    if "max_token_length" not in manifest and "max_seq_length" not in manifest:
+        raise ValueError(
+            "Missing required manifest field: 'max_token_length' or 'max_seq_length'."
+        )
+
+    # Validate model configuration
+    if manifest["model_id"] != DEFAULT_MODEL_ID:
+        raise ValueError(
+            f"Manifest model_id is '{manifest['model_id']}', "
+            f"expected '{DEFAULT_MODEL_ID}'."
+        )
+    if manifest["model_revision"] != DEFAULT_MODEL_REVISION:
+        raise ValueError(
+            f"Manifest model_revision is '{manifest['model_revision']}', "
+            f"expected '{DEFAULT_MODEL_REVISION}'."
+        )
+
+    expected_dim = int(manifest["embedding_dimension"])
     if expected_dim != DEFAULT_EMBEDDING_DIM:
         raise ValueError(
             f"Manifest embedding dimension is {expected_dim}, "
             f"expected {DEFAULT_EMBEDDING_DIM}."
         )
-    expected_passage_count = int(manifest.get("passage_count", 0))
+
+    if manifest["pooling"] != "masked_mean":
+        raise ValueError(
+            f"Manifest pooling is '{manifest['pooling']}', expected 'masked_mean'."
+        )
+
+    max_seq_len = int(
+        manifest.get("max_token_length", manifest.get("max_seq_length", 0))
+    )
+    if max_seq_len != DEFAULT_MAX_SEQ_LENGTH:
+        raise ValueError(
+            f"Manifest sequence length is {max_seq_len}, "
+            f"expected {DEFAULT_MAX_SEQ_LENGTH}."
+        )
+
+    if manifest["normalize_embeddings"] is not False:
+        raise ValueError(
+            f"Manifest normalize_embeddings is {manifest['normalize_embeddings']}, "
+            "expected False."
+        )
+
+    similarity = manifest.get("similarity_method", manifest.get("similarity", ""))
+    if similarity != "dot_product":
+        raise ValueError(
+            f"Manifest similarity method is '{similarity}', expected 'dot_product'."
+        )
+
+    if manifest["output_dtype"] != "float32":
+        raise ValueError(
+            f"Manifest output_dtype is '{manifest['output_dtype']}', "
+            "expected 'float32'."
+        )
+
+    manifest_passage_count = int(manifest["passage_count"])
+    if (
+        expected_passage_count is not None
+        and manifest_passage_count != expected_passage_count
+    ):
+        raise ValueError(
+            f"Manifest passage count is {manifest_passage_count}, "
+            f"expected {expected_passage_count}."
+        )
+
+    manifest_corpus_sha = str(manifest["source_corpus_sha256"])
+    if (
+        expected_corpus_sha256 is not None
+        and manifest_corpus_sha != expected_corpus_sha256
+    ):
+        raise ValueError(
+            f"Manifest source corpus SHA-256 is '{manifest_corpus_sha}', "
+            f"expected '{expected_corpus_sha256}'."
+        )
 
     # 3. Checksum validations
     corpus_sha256 = compute_sha256(corp_path)
-    if corpus_sha256 != manifest["source_corpus_sha256"]:
+    if corpus_sha256 != manifest_corpus_sha:
         raise ValueError(
             f"Source corpus SHA-256 mismatch!\n"
             f"  Calculated: {corpus_sha256}\n"
-            f"  Manifest:   {manifest['source_corpus_sha256']}"
+            f"  Manifest:   {manifest_corpus_sha}"
         )
 
     emb_file = art_dir / "passage_embeddings.npy"
@@ -143,10 +494,10 @@ def verify_artifact(
     if not isinstance(document_ids, list):
         raise ValueError("document_ids.json must be a JSON list.")
 
-    if len(document_ids) != expected_passage_count:
+    if len(document_ids) != manifest_passage_count:
         raise ValueError(
             f"Document ID count mismatch: got {len(document_ids)}, "
-            f"expected {expected_passage_count} from manifest."
+            f"expected {manifest_passage_count} from manifest."
         )
 
     seen_ids: set[str] = set()
@@ -157,27 +508,13 @@ def verify_artifact(
             raise ValueError(f"Duplicate document ID found: '{doc_id}'.")
         seen_ids.add(doc_id)
 
-    # 5. Validate exact alignment with source corpus order
-    corpus_ids: list[str] = []
-    with open(corp_path, encoding="utf-8") as f:
-        for line_no, raw_line in enumerate(f, 1):
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Malformed JSON in corpus at {corp_path}:{line_no}: {exc}"
-                ) from exc
-            doc_id = str(record.get("_id", "")).strip()
-            corpus_ids.append(doc_id)
-
-    if len(corpus_ids) != len(document_ids):
-        raise ValueError(
-            f"Corpus record count ({len(corpus_ids)}) does not match "
-            f"document IDs count ({len(document_ids)})."
-        )
+    # 5. Validate source corpus strictly and verify exact 1:1 order alignment
+    corpus_records = validate_corpus_file(
+        corp_path,
+        expected_sha256=manifest_corpus_sha,
+        expected_count=manifest_passage_count,
+    )
+    corpus_ids = [r["_id"] for r in corpus_records]
 
     if corpus_ids != document_ids:
         for idx, (cid, did) in enumerate(zip(corpus_ids, document_ids, strict=False)):
@@ -186,6 +523,7 @@ def verify_artifact(
                     f"Document ID alignment mismatch at index {idx}: "
                     f"corpus has '{cid}', artifact has '{did}'."
                 )
+        raise ValueError("Document IDs do not match corpus IDs exactly in order.")
 
     # 6. Load embeddings with memory mapping and validate
     embeddings = np.load(str(emb_file), mmap_mode="r")
@@ -199,10 +537,10 @@ def verify_artifact(
             f"document IDs count ({len(document_ids)})."
         )
 
-    if embeddings.shape[1] != expected_dim:
+    if embeddings.shape[1] != DEFAULT_EMBEDDING_DIM:
         raise ValueError(
             f"Embedding dimension ({embeddings.shape[1]}) does not match "
-            f"expected dimension ({expected_dim})."
+            f"expected dimension ({DEFAULT_EMBEDDING_DIM})."
         )
 
     if embeddings.dtype != np.float32:
@@ -217,8 +555,8 @@ def verify_artifact(
         "dtype": str(embeddings.dtype),
         "model_id": manifest["model_id"],
         "model_revision": manifest["model_revision"],
-        "pooling": manifest.get("pooling", "masked_mean"),
-        "similarity": manifest.get("similarity_method", "dot_product"),
+        "pooling": manifest["pooling"],
+        "similarity": similarity,
         "corpus_sha256": corpus_sha256,
         "embedding_sha256": emb_sha256,
         "document_ids_sha256": doc_ids_sha256,
@@ -467,94 +805,44 @@ class ContrieverRetriever:
         artifact_dir: Path | str,
         corpus_path: Path | str,
         encoder: Any = None,
+        expected_passage_count: int | None = None,
+        expected_corpus_sha256: str | None = None,
     ) -> "ContrieverRetriever":
         """Load artifact files, validate checksums, and initialize retriever.
+
+        Performs full artifact verification using verify_artifact before loading.
 
         Args:
             artifact_dir: Path to directory containing Contriever artifact files.
             corpus_path: Path to source corpus JSONL file.
             encoder: Optional encoder instance to reuse.
+            expected_passage_count: Optional expected passage count.
+            expected_corpus_sha256: Optional expected corpus SHA-256.
 
         Returns:
             Configured ContrieverRetriever instance.
         """
+        # Run shared verification logic - fails fast on any invalid metadata/data
+        verify_artifact(
+            artifact_dir=artifact_dir,
+            corpus_path=corpus_path,
+            expected_passage_count=expected_passage_count,
+            expected_corpus_sha256=expected_corpus_sha256,
+        )
+
         art_dir = Path(artifact_dir)
         corp_file = Path(corpus_path)
 
-        if not art_dir.exists() or not art_dir.is_dir():
-            raise FileNotFoundError(f"Artifact directory not found: {art_dir}")
-        if not corp_file.exists():
-            raise FileNotFoundError(f"Source corpus file not found: {corp_file}")
+        with open(art_dir / "index_manifest.json", encoding="utf-8") as f:
+            manifest = json.load(f)
 
-        missing = [f for f in REQUIRED_ARTIFACT_FILES if not (art_dir / f).exists()]
-        if missing:
-            raise FileNotFoundError(
-                f"Missing required artifact files in {art_dir}: {', '.join(missing)}"
-            )
+        with open(art_dir / "document_ids.json", encoding="utf-8") as f:
+            document_ids = json.load(f)
 
-        manifest_path = art_dir / "index_manifest.json"
-        try:
-            with open(manifest_path, encoding="utf-8") as f:
-                manifest = json.load(f)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Corrupt manifest file {manifest_path}: {exc}") from exc
+        corpus_records = validate_corpus_file(corp_file)
+        corpus_docs = {r["_id"]: r for r in corpus_records}
 
-        # Check corpus checksum against manifest
-        actual_corpus_sha = compute_sha256(corp_file)
-        expected_corpus_sha = manifest.get("source_corpus_sha256")
-        if expected_corpus_sha and actual_corpus_sha != expected_corpus_sha:
-            raise ValueError(
-                f"Corpus checksum mismatch: expected {expected_corpus_sha}, "
-                f"got {actual_corpus_sha}."
-            )
-
-        # Check embedding file checksum against manifest
         emb_file = art_dir / "passage_embeddings.npy"
-        actual_emb_sha = compute_sha256(emb_file)
-        expected_emb_sha = manifest.get("embedding_sha256")
-        if expected_emb_sha and actual_emb_sha != expected_emb_sha:
-            raise ValueError(
-                f"Embeddings checksum mismatch: expected {expected_emb_sha}, "
-                f"got {actual_emb_sha}."
-            )
-
-        # Load document IDs
-        docs_ids_file = art_dir / "document_ids.json"
-        try:
-            with open(docs_ids_file, encoding="utf-8") as f:
-                document_ids = json.load(f)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Corrupt document IDs file {docs_ids_file}: {exc}"
-            ) from exc
-
-        if not isinstance(document_ids, list):
-            raise ValueError(
-                "document_ids.json must be a JSON list, got "
-                f"{type(document_ids).__name__}"
-            )
-
-        # Load source corpus documents into mapping
-        corpus_docs: dict[str, dict[str, Any]] = {}
-        with open(corp_file, encoding="utf-8") as f:
-            for line_no, raw_line in enumerate(f, 1):
-                line = raw_line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(
-                        f"Malformed JSON in corpus at {corp_file}:{line_no}: {exc}"
-                    ) from exc
-                doc_id = str(record.get("_id", "")).strip()
-                if not doc_id:
-                    raise ValueError(
-                        f"Missing or empty '_id' field at {corp_file}:{line_no}"
-                    )
-                corpus_docs[doc_id] = record
-
-        # Load embeddings (using memory mapping for efficiency)
         embeddings = np.load(str(emb_file), mmap_mode="r")
 
         return cls(

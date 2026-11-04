@@ -105,11 +105,20 @@ def main() -> None:
         sys.stderr.write(f"Search error: Corpus file not found at: {corpus_path}\n")
         sys.exit(1)
 
-    # Load retriever and manifest
+    expected_count = 50000 if args.corpus is None else None
+    expected_sha = (
+        "c3970d91ebfd36d794066b42bd7acb85a744aabba2c97dd9a9bfde52d3dcbfbf"
+        if args.corpus is None
+        else None
+    )
+
+    # Load retriever and manifest with automatic validation
     try:
         retriever = ContrieverRetriever.load(
             artifact_dir=artifact_path,
             corpus_path=corpus_path,
+            expected_passage_count=expected_count,
+            expected_corpus_sha256=expected_sha,
         )
     except Exception as exc:
         sys.stderr.write(f"Failed to load Contriever artifact: {exc}\n")

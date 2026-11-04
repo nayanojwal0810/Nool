@@ -58,8 +58,20 @@ def main() -> None:
     print(f"Verifying Contriever artifact in: {artifact_path}")
     print(f"Against source corpus: {corpus_path}")
 
+    expected_count = 50000 if args.corpus is None else None
+    expected_sha = (
+        "c3970d91ebfd36d794066b42bd7acb85a744aabba2c97dd9a9bfde52d3dcbfbf"
+        if args.corpus is None
+        else None
+    )
+
     try:
-        metrics = verify_artifact(artifact_path, corpus_path)
+        metrics = verify_artifact(
+            artifact_path,
+            corpus_path,
+            expected_passage_count=expected_count,
+            expected_corpus_sha256=expected_sha,
+        )
     except Exception as exc:
         sys.stderr.write(f"\nVerification FAILED: {exc}\n")
         sys.exit(1)
