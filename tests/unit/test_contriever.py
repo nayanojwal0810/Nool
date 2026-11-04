@@ -1,6 +1,7 @@
 """Unit tests for Contriever dense retrieval, artifact loading, and verification."""
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -352,8 +353,11 @@ def test_local_query_encoder_receives_expected_text(tmp_path: Path) -> None:
     assert fake_encoder.recorded_query == "Where was Marie Curie born?"
 
 
-def test_missing_dense_dependencies_raises_informative_error() -> None:
+def test_missing_dense_dependencies_raises_informative_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verify clear error instructions when torch / transformers are missing."""
+    monkeypatch.setitem(sys.modules, "torch", None)
     encoder = ContrieverEncoder()
     with pytest.raises(ImportError, match=r'pip install -e "\.\[dense\]"'):
         encoder.encode_texts(["Hello world"])
