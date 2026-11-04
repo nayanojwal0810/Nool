@@ -11,3 +11,17 @@ paths:
 
 models:
   cache_dir: ".cache/models"
+
+retrieval:
+  bm25:
+    corpus_path: "data/processed/hotpotqa_sample/corpus.jsonl"
+    index_dir: "indexes/hotpotqa_sample_bm25"
+    method: "lucene"
+    k1: 1.5
+    b: 0.75
+    stopwords: "english"
+    stemming: false
+    indexed_fields:
+      - "title"
+      - "text"
+    top_k: 10
