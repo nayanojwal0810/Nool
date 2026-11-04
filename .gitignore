@@ -59,6 +59,8 @@ models/
 *.faiss
 *.hnsw
 *.embeddings
+*.npy
+*.npz
 embeddings/
 indexes/
 

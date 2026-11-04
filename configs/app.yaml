@@ -25,3 +25,18 @@ retrieval:
       - "title"
       - "text"
     top_k: 10
+  contriever:
+    model_id: "facebook/contriever"
+    model_revision: "2bd46a25019aeea091fd42d1f0fd4801675cf699"
+    embedding_dim: 768
+    pooling: "masked_mean"
+    max_seq_length: 512
+    passage_fields:
+      - "title"
+      - "text"
+    normalize_embeddings: false
+    similarity: "dot_product"
+    artifact_dir: "indexes/contriever_hotpotqa_sample"
+    corpus_path: "data/processed/hotpotqa_sample/corpus.jsonl"
+    top_k: 10
+    device: "cpu"

@@ -42,6 +42,7 @@ def test_expected_core_files_exist() -> None:
         root / "data" / "manifests" / "hotpotqa_sample.yaml",
         root / "docs" / "dataset_audit.md",
         root / "docs" / "retrieval_bm25.md",
+        root / "docs" / "retrieval_contriever.md",
     ]
     for file_path in expected_files:
         assert file_path.exists(), f"Missing file: {file_path}"
