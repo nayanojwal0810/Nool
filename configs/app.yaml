@@ -13,6 +13,10 @@ models:
   cache_dir: ".cache/models"
 
 retrieval:
+  hybrid:
+    candidate_k: 10
+    rank_constant: 20
+    top_k: 10
   bm25:
     corpus_path: "data/processed/hotpotqa_sample/corpus.jsonl"
     index_dir: "indexes/hotpotqa_sample_bm25"

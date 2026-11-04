@@ -10,7 +10,7 @@ Nool is a local-first enterprise knowledge assistant designed to help employees 
 
 Internal company knowledge is frequently fragmented across separate policies, handbooks, and intranet portals. Employees spend significant time locating relevant documentation, and existing automated assistants often generate ungrounded answers, ignore permission boundaries, or rely on outdated revisions of company documents. Nool addresses these challenges by maintaining an auditable evidence pipeline that validates document permissions, freshness, and relevance before generating responses.
 
-## How the System Works
+## Intended Answer Flow
 
 1. **Query Processing**: An employee submits a question through the user interface.
 2. **Hybrid Retrieval**: The retrieval engine searches indexed company documents using sparse lexical matching and dense semantic embeddings.
@@ -20,7 +20,7 @@ Internal company knowledge is frequently fragmented across separate policies, ha
 
 ## Main Planned Capabilities
 
-- **Hybrid Retrieval (Planned)**: Combining lexical search (BM25) and dense embeddings (Contriever) for high-recall document and passage search.
+- **Hybrid Retrieval (Implemented)**: BM25 and Contriever rankings are combined with reciprocal rank fusion on the fixed HotpotQA sample.
 - **Evidence Memory (Planned)**: Fast vector search indexing (HNSW) and SQLite storage for persistent, reusable evidence records.
 - **Access and Freshness Validation (Planned)**: Policy-based filtering to ensure users only see information permitted by their role and drawn from current document versions.
 - **Local Generation (Planned)**: Grounded response generation using a local Qwen language model without sending enterprise data to external APIs.
@@ -31,7 +31,7 @@ Internal company knowledge is frequently fragmented across separate policies, ha
 
 - **Language**: Python 3.11
 - **Configuration & Data Handling**: PyYAML, JSONL
-- **Search & Retrieval (Planned)**: BM25, Contriever
+- **Search & Retrieval**: BM25, Contriever, reciprocal rank fusion
 - **Vector & Evidence Storage (Planned)**: HNSW, SQLite
 - **Model Execution (Planned)**: Local Qwen model
 - **User Interface (Planned)**: Streamlit
@@ -109,11 +109,12 @@ Nool/
 
 ## Current Implementation Status
 
-The project foundation is initialized:
+The retrieval foundation is implemented:
 - Repository layout and directory structure configured.
 - Packaging metadata (`pyproject.toml`) and Python 3.11 environment defined.
 - Application configuration (`configs/app.yaml`) and configuration loader created.
 - Quality control toolchain (Ruff, pytest) and CI workflow established.
 - Initial unit test suite passing.
 - Raw dataset inspection and manifest generation completed.
-- Core retrieval, evidence memory, and model generation components are planned for subsequent implementation.
+- BM25, Contriever, and hybrid retrieval run on the same 50,000-passage sample. The test results and limitations are in the [hybrid evaluation](docs/retrieval_hybrid.md).
+- Enterprise document ingestion, evidence memory, permission and freshness validation, model generation, and the Streamlit website remain to be implemented.
