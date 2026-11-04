@@ -1,6 +1,6 @@
-# Retrieval evaluation
+# Nool — Enterprise Knowledge Assistant: Retrieval Evaluation
 
-Search must find useful passages before Nool can answer a question. We compared three methods on the same 50,000-passage HotpotQA sample and 500 test questions. BM25 matches words, Contriever matches meaning, and Nool's main hybrid search combines their ranked lists.
+Nool needs useful source passages before it can answer a question. We compared three search methods on the same 50,000-passage HotpotQA sample and 500 test questions. BM25 matches words, Contriever matches meaning, and Nool's main hybrid search combines their ranked lists. We used the development questions to choose the hybrid setting and kept the test questions for the reported comparison.
 
 ## Methods
 
@@ -8,7 +8,7 @@ BM25 uses `bm25s` with Lucene scoring, `k1=1.5`, `b=0.75`, English stopwords, an
 
 Contriever uses the pinned `facebook/contriever` model. The 50,000 passage vectors were generated in Colab and checked locally. Each query uses the same model, and the code ranks passages by dot product.
 
-Hybrid search takes the top 10 results from each method and adds `1 / (20 + rank)` for each passage's positions. It removes duplicate passages and returns the 10 highest scores. The development questions were used to set this value; the test questions produced the results below.
+Hybrid search takes the top 10 results from each method and adds `1 / (20 + rank)` for each passage's positions. It removes duplicate passages and returns the 10 highest scores. This formula uses ranks because BM25 and Contriever scores have different scales.
 
 ## Test results
 
@@ -25,7 +25,7 @@ Recall@10 is the share of known relevant passages found in the first 10 results.
 
 Hybrid Recall@10 improved over BM25 on 32 questions, fell on 10, and tied on 458. It improved over Contriever on 61, fell on 4, and tied on 435. The combined ranking helps overall, although it does not help every question.
 
-The saved CPU benchmark measured mean search time of 3.55 ms for BM25 and 177.33 ms for Contriever. Hybrid search runs both. We have not yet measured the complete hybrid request time or an end-to-end answer time.
+The saved CPU benchmark measured mean search time of 3.55 ms for BM25 and 177.33 ms for Contriever on the recorded machine. Hybrid search runs both, so its extra search work is a real cost. We have not yet measured the complete hybrid request time or an end-to-end answer time.
 
 ## Reproduce the comparison
 

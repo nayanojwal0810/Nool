@@ -1,6 +1,6 @@
-# Contriever embedding guide
+# Nool — Enterprise Knowledge Assistant: Contriever Embedding Guide
 
-Contriever represents each passage as a list of 768 numbers. Nool generated these passage vectors for all 50,000 sampled HotpotQA passages in Google Colab, then verified the downloaded files against the local corpus. Query vectors are generated when searching.
+Contriever represents each passage as a list of 768 numbers called an embedding. Nool generated embeddings for all 50,000 sampled HotpotQA passages in Google Colab, then verified the downloaded files against the local corpus. The search code creates a query embedding when someone searches. This guide explains how to prepare and verify the passage artifact.
 
 ## Prepare the artifact
 

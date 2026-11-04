@@ -1,6 +1,6 @@
-# Retrieval dataset
+# Nool — Enterprise Knowledge Assistant: Retrieval Dataset
 
-Nool uses the BEIR version of HotpotQA to measure search quality. Each question has known relevant passages. This dataset tests retrieval; it cannot tell us whether the future company website answers correctly or protects restricted documents.
+Nool uses the BEIR version of HotpotQA to measure how well its search methods find useful passages. The dataset provides questions and relevance records that identify passages known to help answer them. We compare BM25, Contriever, and hybrid search against those records. HotpotQA cannot tell us whether the future company website answers correctly or protects restricted documents.
 
 ## Source and fixed sample
 
@@ -18,7 +18,7 @@ The working benchmark uses one reproducible sample:
 
 Every relevant passage for the selected questions is in the sample. Development and test question IDs do not overlap. The sample uses random seed 42, and its corpus SHA-256 is `c3970d91ebfd36d794066b42bd7acb85a744aabba2c97dd9a9bfde52d3dcbfbf`. The manifests in `data/manifests/` record the source and sample details.
 
-The archive and processed passages are excluded from Git. Run `scripts/audit_hotpotqa.py` to inspect the archive and `scripts/prepare_hotpotqa_sample.py` to recreate the sample. Both scripts run from the project root after installing the project.
+The archive and processed passages are excluded from Git. Place the downloaded `hotpotqa.zip` in `data/raw/`. Run `scripts/audit_hotpotqa.py` to inspect the archive and `scripts/prepare_hotpotqa_sample.py` to recreate the sample. Both scripts run from the project root after installing the project. The scripts create their output directories when needed.
 
 Results on these 50,000 passages cannot be compared directly with results on the full 5.23-million-passage collection. Some useful passages may lack relevance labels, so reported scores measure matches to the known labels.
 
