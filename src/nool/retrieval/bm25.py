@@ -53,6 +53,67 @@ def _compute_sha256(file_path: Path, chunk_size: int = 1024 * 1024) -> str:
     return hasher.hexdigest()
 
 
+class _SimpleEnglishStemmer:
+    """Lightweight English suffix stemmer used when PyStemmer is not installed."""
+
+    def stemWords(self, words: list[str]) -> list[str]:
+        """Stem a list of words."""
+        return [self.stem_word(w) for w in words]
+
+    @staticmethod
+    def stem_word(word: str) -> str:
+        """Stem an individual English word using common suffix rules."""
+        w = word.lower()
+        if len(w) <= 3:
+            return w
+        if w.endswith("ies") and len(w) > 4:
+            return w[:-3] + "y"
+        if w.endswith("tion") and len(w) > 5:
+            return w[:-4] + "t"
+        if w.endswith("ing") and len(w) > 4:
+            base = w[:-3]
+            if len(base) > 2 and base[-1] == base[-2] and base[-1] not in "lsz":
+                return base[:-1]
+            return base
+        if w.endswith("ed") and len(w) > 3:
+            base = w[:-2]
+            if len(base) > 2 and base[-1] == base[-2] and base[-1] not in "lsz":
+                return base[:-1]
+            return base
+        if w.endswith("es") and len(w) > 3:
+            return w[:-2]
+        if w.endswith("s") and not w.endswith("ss") and len(w) > 2:
+            return w[:-1]
+        return w
+
+
+def resolve_stemmer(stemmer: Any) -> tuple[Any, str | None]:
+    """Resolve a stemmer setting into an executable stemmer and identifier."""
+    if stemmer is None or stemmer is False:
+        return None, None
+
+    if isinstance(stemmer, str):
+        stemmer_name = stemmer.lower().strip()
+        if stemmer_name in ("none", "null", "disabled", ""):
+            return None, None
+        if stemmer_name == "english":
+            try:
+                import Stemmer
+
+                return Stemmer.Stemmer("english"), "english"
+            except ImportError:
+                return _SimpleEnglishStemmer(), "english"
+        raise ValueError(f"Unsupported stemmer identifier: '{stemmer}'")
+
+    if hasattr(stemmer, "stemWords") or callable(stemmer):
+        identifier = getattr(stemmer, "name", None) or getattr(
+            stemmer, "__name__", "custom"
+        )
+        return stemmer, str(identifier)
+
+    raise ValueError(f"Invalid stemmer type: {type(stemmer)}")
+
+
 class BM25Retriever:
     """BM25 sparse retriever for index building, loading, and searching."""
 
@@ -61,6 +122,7 @@ class BM25Retriever:
         bm25: bm25s.BM25,
         documents: list[_IndexedDocument],
         manifest: dict[str, Any],
+        stemmer: Any = None,
     ) -> None:
         """Initialize retriever with loaded BM25 model, document store, and manifest.
 
@@ -68,10 +130,14 @@ class BM25Retriever:
             bm25: Pre-indexed or loaded bm25s.BM25 model.
             documents: List of indexed documents in exact position alignment.
             manifest: Index metadata dictionary.
+            stemmer: Restored stemmer object or callable matching index tokenization.
         """
         self.bm25 = bm25
         self.documents = documents
         self.manifest = manifest
+        self.stopwords = manifest.get("stopwords", "english")
+        self.stemmer = stemmer
+        self.stemmer_id = manifest.get("stemmer")
 
     @classmethod
     def build(
@@ -190,12 +256,13 @@ class BM25Retriever:
             raise ValueError(f"Corpus file {corpus_file} contains no valid records.")
 
         corpus_sha256 = _compute_sha256(corpus_file)
+        stemmer_obj, stemmer_id = resolve_stemmer(stemmer)
 
         # 1. Lower-level tokenization
         corpus_tokens = bm25s.tokenize(
             searchable_texts,
             stopwords=stopwords,
-            stemmer=stemmer,
+            stemmer=stemmer_obj,
         )
 
         # 2. Lower-level BM25 indexing
@@ -230,7 +297,8 @@ class BM25Retriever:
             "k1": k1,
             "b": b,
             "stopwords": stopwords,
-            "stemming": stemmer is not None,
+            "stemming": stemmer_id is not None,
+            "stemmer": stemmer_id,
             "indexed_fields": list(indexed_fields),
             "document_count": len(documents),
             "source_corpus_filename": corpus_file.name,
@@ -242,7 +310,12 @@ class BM25Retriever:
         with open(manifest_file, "w", encoding="utf-8", newline="\n") as f:
             json.dump(manifest, f, indent=2)
 
-        return cls(bm25=bm25_model, documents=documents, manifest=manifest)
+        return cls(
+            bm25=bm25_model,
+            documents=documents,
+            manifest=manifest,
+            stemmer=stemmer_obj,
+        )
 
     @classmethod
     def load(cls, index_dir: Path | str) -> "BM25Retriever":
@@ -310,7 +383,15 @@ class BM25Retriever:
                 f"{expected_count}, but documents.jsonl has {len(documents)}."
             )
 
-        return cls(bm25=bm25_model, documents=documents, manifest=manifest)
+        saved_stemmer_id = manifest.get("stemmer")
+        stemmer_obj, _ = resolve_stemmer(saved_stemmer_id)
+
+        return cls(
+            bm25=bm25_model,
+            documents=documents,
+            manifest=manifest,
+            stemmer=stemmer_obj,
+        )
 
     def search(self, query: str, top_k: int = 10) -> list[BM25SearchResult]:
         """Search the indexed passages using BM25 scoring.
@@ -335,11 +416,10 @@ class BM25Retriever:
         if not self.documents:
             return []
 
-        stopwords = self.manifest.get("stopwords", "english")
         query_tokens = bm25s.tokenize(
             query,
-            stopwords=stopwords,
-            stemmer=None,
+            stopwords=self.stopwords,
+            stemmer=self.stemmer,
         )
 
         # If query contains only stopwords or unknown tokens with no IDs

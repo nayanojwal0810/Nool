@@ -53,15 +53,19 @@ def main() -> None:
 
     try:
         app_config = load_config()
-    except Exception:
-        app_config = {}
+    except Exception as exc:
+        sys.stderr.write(f"Configuration error: {exc}\n")
+        sys.exit(1)
 
     bm25_cfg = app_config.get("retrieval", {}).get("bm25", {})
 
     index_str = args.index_dir or bm25_cfg.get(
         "index_dir", "indexes/hotpotqa_sample_bm25"
     )
-    top_k = args.top_k or int(bm25_cfg.get("top_k", 10))
+    if args.top_k is not None:
+        top_k = args.top_k
+    else:
+        top_k = int(bm25_cfg.get("top_k", 10))
 
     index_path = resolve_path(index_str)
 

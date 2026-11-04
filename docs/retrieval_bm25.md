@@ -2,13 +2,13 @@
 
 ## 1. What BM25 Does
 
-BM25 (Best Matching 25) is a sparse lexical retrieval algorithm derived from the probabilistic relevance framework. It ranks document passages based on the term frequencies of query words appearing in each document, balanced by inverse document frequency (penalizing ubiquitous words) and document length normalization (penalizing unnaturally long texts).
+BM25 (Best Matching 25) is a sparse lexical retrieval method. It ranks document passages based on query-term matching, inverse document frequency (accounting for term specificity), and document-length normalization (accounting for passage length variations).
 
 ## 2. Why Nool Uses BM25 as Its First Retrieval Method
 
-1. **Precision on Exact Terms**: Enterprise queries often involve specific acronyms, proper names, product IDs, and policy titles where exact token matching is critical.
-2. **Computational Efficiency**: BM25 requires no GPU hardware or heavy neural networks. It builds rapidly on standard CPU architecture and evaluates queries in milliseconds.
-3. **Lexical Baseline**: BM25 establishes the foundation for Nool's retrieval pipeline, which will subsequently be combined with dense embeddings (Contriever) into a hybrid retriever.
+1. **Exact Term Matching**: BM25 is effective for locating exact words, proper names, technical acronyms, and organizational terminology.
+2. **Complement to Semantic Retrieval**: It complements semantic retrieval methods, which can identify conceptually related passages even when the exact words differ.
+3. **Lexical Baseline**: BM25 establishes the lexical retrieval foundation for Nool, which will subsequently be combined with dense embeddings (Contriever) into a hybrid retriever.
 
 ## 3. How Title and Text Are Indexed
 

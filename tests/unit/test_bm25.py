@@ -2,7 +2,9 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
+import bm25s
 import pytest
 
 from nool.retrieval.bm25 import BM25Retriever, BM25SearchResult
@@ -245,3 +247,89 @@ def test_missing_or_incomplete_index_files_raise(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match="Incomplete BM25 index"):
         BM25Retriever.load(incomplete_dir)
+
+
+def test_save_load_search_lifecycle(sample_corpus: Path, tmp_path: Path) -> None:
+    """End-to-end lifecycle: build, save, load in a new instance, and search."""
+    index_dir = tmp_path / "lifecycle_index"
+
+    # 1. Build and save
+    BM25Retriever.build(sample_corpus, index_dir)
+
+    # 2. Load fresh instance
+    loaded_retriever = BM25Retriever.load(index_dir)
+
+    # 3. Search using newly loaded retriever
+    results = loaded_retriever.search("Quantum mechanics atomic scale", top_k=3)
+
+    assert len(results) >= 1
+    top = results[0]
+    assert top.document_id == "doc1"
+    assert top.title == "Quantum Physics"
+    assert top.score > 0.0
+    assert top.rank == 1
+    assert "atomic" in top.text
+
+
+def test_stemmer_setting_consistency_between_indexing_and_search(
+    tmp_path: Path,
+) -> None:
+    """Verify stemmer setting is stored in manifest, restored, and used in search."""
+    docs = [
+        {
+            "_id": "doc1",
+            "title": "Network Cables",
+            "text": "The technician connects the optical cables.",
+        },
+        {
+            "_id": "doc2",
+            "title": "Baking",
+            "text": "Flour and water make dough.",
+        },
+    ]
+    corpus_file = _write_corpus(tmp_path / "stem_corpus.jsonl", docs)
+    stem_index_dir = tmp_path / "stem_index"
+    no_stem_index_dir = tmp_path / "no_stem_index"
+
+    # 1. Build with stemming enabled ("english")
+    BM25Retriever.build(corpus_file, stem_index_dir, stemmer="english")
+    manifest = json.loads(
+        (stem_index_dir / "index_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["stemmer"] == "english"
+    assert manifest["stemming"] is True
+
+    # Load in a fresh retriever
+    stemmed_retriever = BM25Retriever.load(stem_index_dir)
+    assert stemmed_retriever.stemmer is not None
+
+    # Search with inflected word 'connecting':
+    # With stemming, 'connecting' stems to 'connect', matching 'connects' in doc1
+    with patch("bm25s.tokenize", wraps=bm25s.tokenize) as mock_tokenize:
+        stemmed_results = stemmed_retriever.search("connecting", top_k=2)
+        assert len(stemmed_results) == 1
+        assert stemmed_results[0].document_id == "doc1"
+        assert mock_tokenize.call_count == 1
+        _, kwargs = mock_tokenize.call_args
+        assert kwargs["stemmer"] is stemmed_retriever.stemmer
+        assert kwargs["stemmer"] is not None
+
+    # 2. Build with stemming disabled (default: None)
+    BM25Retriever.build(corpus_file, no_stem_index_dir, stemmer=None)
+    manifest_no_stem = json.loads(
+        (no_stem_index_dir / "index_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest_no_stem["stemmer"] is None
+    assert manifest_no_stem["stemming"] is False
+
+    no_stem_retriever = BM25Retriever.load(no_stem_index_dir)
+    assert no_stem_retriever.stemmer is None
+
+    # Search with 'connecting' when stemming is disabled:
+    # 'connecting' does not match 'connects', yielding 0 results
+    with patch("bm25s.tokenize", wraps=bm25s.tokenize) as mock_tokenize_none:
+        no_stem_results = no_stem_retriever.search("connecting", top_k=2)
+        assert no_stem_results == []
+        assert mock_tokenize_none.call_count == 1
+        _, kwargs_none = mock_tokenize_none.call_args
+        assert kwargs_none["stemmer"] is None
