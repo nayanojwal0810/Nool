@@ -210,17 +210,31 @@ def main() -> None:
     print("Validating benchmark data files against sample manifest...")
 
     is_standard_sample = args.corpus is None
-    expected_sha = BENCHMARK_CORPUS_SHA256 if is_standard_sample else None
 
     try:
+        actual_corpus_sha = compute_file_sha256(corpus_path)
+        if is_standard_sample and actual_corpus_sha != BENCHMARK_CORPUS_SHA256:
+            raise ValueError(
+                f"Standard benchmark corpus SHA-256 mismatch for {corpus_path}:\n"
+                f"  Expected: {BENCHMARK_CORPUS_SHA256}\n"
+                f"  Actual:   {actual_corpus_sha}"
+            )
+
+        expected_total_queries = (
+            sample_info["development_queries"] + sample_info["test_queries"]
+        )
+
         corpus_ids = load_and_validate_corpus(
             corpus_path,
-            expected_sha256=expected_sha,
+            expected_sha256=None,
             expected_count=expected_count,
         )
         print(f"  ✓ Corpus verified: {len(corpus_ids):,} passages with unique IDs.")
 
-        all_queries = load_and_validate_queries(queries_path)
+        all_queries = load_and_validate_queries(
+            queries_path,
+            expected_count=expected_total_queries,
+        )
         print(f"  ✓ Queries verified: {len(all_queries):,} unique non-empty queries.")
 
         corpus_ids_set = set(corpus_ids)
@@ -256,7 +270,7 @@ def main() -> None:
             artifact_dir=contriever_art_dir,
             corpus_path=corpus_path,
             expected_passage_count=expected_count,
-            expected_corpus_sha256=expected_sha,
+            expected_corpus_sha256=actual_corpus_sha,
         )
         model_id = contriever_retriever.manifest.get("model_id", DEFAULT_MODEL_ID)
         model_revision = contriever_retriever.manifest.get(
@@ -278,7 +292,7 @@ def main() -> None:
         verify_retrievers_alignment(
             bm25_retriever,
             contriever_retriever,
-            expected_corpus_sha256=expected_sha,
+            expected_corpus_sha256=actual_corpus_sha,
             expected_count=expected_count,
         )
         print("  ✓ Verified BM25 and Contriever corpus provenance and 1:1 ID ordering.")
@@ -428,7 +442,7 @@ def main() -> None:
         "num_queries_evaluated": len(query_order),
         "num_qrels_rows": total_qrels_count,
         "corpus_size": len(corpus_ids),
-        "corpus_sha256": compute_file_sha256(corpus_path),
+        "corpus_sha256": actual_corpus_sha,
         "sample_manifest": {
             "source_path": str(manifest_path),
             "declared_corpus_sample_size": expected_count,

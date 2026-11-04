@@ -167,7 +167,7 @@ def extract_artifact_configurations(
     if not isinstance(contriever_manifest, dict):
         raise ValueError("Contriever manifest must be a dictionary.")
 
-    required_bm25_fields = ["method", "k1", "b", "stopwords", "stemming"]
+    required_bm25_fields = ["method", "k1", "b", "stopwords", "stemming", "stemmer"]
     for field_name in required_bm25_fields:
         if field_name not in bm25_manifest:
             raise ValueError(
@@ -179,6 +179,8 @@ def extract_artifact_configurations(
         "model_revision",
         "pooling",
         "similarity_method",
+        "embedding_dimension",
+        "normalize_embeddings",
     ]
     for field_name in required_dense_fields:
         if field_name not in contriever_manifest:
@@ -187,13 +189,25 @@ def extract_artifact_configurations(
                 f"'{field_name}'."
             )
 
+    if "max_token_length" in contriever_manifest:
+        max_len_key = "max_token_length"
+        max_len_val = contriever_manifest["max_token_length"]
+    elif "max_seq_length" in contriever_manifest:
+        max_len_key = "max_seq_length"
+        max_len_val = contriever_manifest["max_seq_length"]
+    else:
+        raise ValueError(
+            "Contriever manifest missing required sequence length field "
+            "('max_token_length' or 'max_seq_length')."
+        )
+
     bm25_config = {
         "method": bm25_manifest["method"],
         "k1": bm25_manifest["k1"],
         "b": bm25_manifest["b"],
         "stopwords": bm25_manifest["stopwords"],
         "stemming": bm25_manifest["stemming"],
-        "stemmer": bm25_manifest.get("stemmer"),
+        "stemmer": bm25_manifest["stemmer"],
     }
 
     contriever_config = {
@@ -201,8 +215,9 @@ def extract_artifact_configurations(
         "model_revision": contriever_manifest["model_revision"],
         "pooling": contriever_manifest["pooling"],
         "similarity_method": contriever_manifest["similarity_method"],
-        "embedding_dimension": contriever_manifest.get("embedding_dimension", 768),
-        "normalize_embeddings": contriever_manifest.get("normalize_embeddings", False),
+        "embedding_dimension": contriever_manifest["embedding_dimension"],
+        "normalize_embeddings": contriever_manifest["normalize_embeddings"],
+        max_len_key: max_len_val,
     }
 
     return bm25_config, contriever_config
@@ -300,21 +315,24 @@ def load_and_validate_corpus(
 
 def load_and_validate_queries(
     queries_path: Path | str,
+    expected_count: int | None = None,
 ) -> dict[str, str]:
     """Validate and load query records from queries.jsonl.
 
     Strictly validates that query IDs are strings and preserves them exactly.
+    Optionally validates exact query count against expected count.
 
     Args:
         queries_path: Path to queries JSONL file.
+        expected_count: Optional expected query count (e.g. from manifest).
 
     Returns:
         Mapping of query ID to query text.
 
     Raises:
         FileNotFoundError: If queries_path does not exist.
-        ValueError: If duplicate query IDs, non-string IDs, missing text, or blank
-            queries are found.
+        ValueError: If duplicate query IDs, non-string IDs, missing text, blank
+            queries, or count mismatch are found.
     """
     path = Path(queries_path)
     if not path.exists():
@@ -373,6 +391,12 @@ def load_and_validate_queries(
                 )
 
             queries[qid] = cleaned_text
+
+    if expected_count is not None and len(queries) != expected_count:
+        raise ValueError(
+            f"Query count mismatch for {path}: "
+            f"got {len(queries)}, expected exactly {expected_count}."
+        )
 
     return queries
 
@@ -510,7 +534,7 @@ def load_and_validate_qrels(
 def verify_retrievers_alignment(
     bm25_retriever: BM25Retriever,
     contriever_retriever: ContrieverRetriever,
-    expected_corpus_sha256: str | None = None,
+    expected_corpus_sha256: str,
     expected_count: int | None = None,
 ) -> None:
     """Verify that retrievers share the same corpus, provenance, and ID order.
@@ -518,23 +542,38 @@ def verify_retrievers_alignment(
     Args:
         bm25_retriever: Initialized BM25Retriever instance.
         contriever_retriever: Initialized ContrieverRetriever instance.
-        expected_corpus_sha256: Optional expected corpus SHA-256 to verify provenance.
-        expected_count: Expected document count (e.g. 50,000 from sample manifest).
+        expected_corpus_sha256: Expected corpus SHA-256 to verify provenance.
+        expected_count: Expected document count (e.g. from sample manifest).
 
     Raises:
         ValueError: If passage count mismatches, document ID sequences differ,
             or BM25/Contriever corpus provenance fails.
     """
-    if expected_corpus_sha256 is not None:
-        validate_bm25_provenance(bm25_retriever, expected_corpus_sha256)
+    if (
+        not isinstance(expected_corpus_sha256, str)
+        or not expected_corpus_sha256.strip()
+    ):
+        raise ValueError("expected_corpus_sha256 must be a non-empty string.")
 
-        contriever_sha = contriever_retriever.manifest.get("source_corpus_sha256")
-        if contriever_sha != expected_corpus_sha256:
-            raise ValueError(
-                f"Contriever source corpus SHA-256 provenance mismatch:\n"
-                f"  Expected: {expected_corpus_sha256}\n"
-                f"  Manifest: {contriever_sha}"
-            )
+    validate_bm25_provenance(bm25_retriever, expected_corpus_sha256)
+
+    contriever_manifest = getattr(contriever_retriever, "manifest", None)
+    if not isinstance(contriever_manifest, dict):
+        raise ValueError("Contriever retriever is missing manifest dictionary.")
+
+    contriever_sha = contriever_manifest.get("source_corpus_sha256")
+    if not isinstance(contriever_sha, str) or not contriever_sha.strip():
+        raise ValueError(
+            "Contriever manifest is missing or has empty 'source_corpus_sha256' "
+            "provenance checksum."
+        )
+
+    if contriever_sha != expected_corpus_sha256:
+        raise ValueError(
+            f"Contriever source corpus SHA-256 provenance mismatch:\n"
+            f"  Expected: {expected_corpus_sha256}\n"
+            f"  Manifest: {contriever_sha}"
+        )
 
     bm25_doc_ids = [doc.id for doc in bm25_retriever.documents]
     contriever_doc_ids = contriever_retriever.document_ids

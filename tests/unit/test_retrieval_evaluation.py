@@ -282,8 +282,15 @@ def test_validate_bm25_provenance() -> None:
     with pytest.raises(ValueError, match="source corpus SHA-256 provenance mismatch"):
         validate_bm25_provenance(retriever_mock, expected_corpus_sha256=valid_sha)
 
+    # 5. Missing manifest dictionary
+    retriever_mock.manifest = None
+    with pytest.raises(
+        ValueError, match="BM25 retriever is missing manifest dictionary"
+    ):
+        validate_bm25_provenance(retriever_mock, expected_corpus_sha256=valid_sha)
 
-def test_extract_artifact_configurations() -> None:
+
+def test_extract_artifact_configurations_valid() -> None:
     """Test extracting actual settings from BM25 and Contriever manifests."""
     bm25_manifest = {
         "method": "lucene",
@@ -301,6 +308,7 @@ def test_extract_artifact_configurations() -> None:
         "similarity_method": "dot_product",
         "embedding_dimension": 768,
         "normalize_embeddings": False,
+        "max_token_length": 512,
     }
 
     bm25_cfg, dense_cfg = extract_artifact_configurations(
@@ -308,24 +316,153 @@ def test_extract_artifact_configurations() -> None:
     )
     assert bm25_cfg["method"] == "lucene"
     assert bm25_cfg["stemming"] is False
+    assert bm25_cfg["stemmer"] is None
     assert bm25_cfg["k1"] == 1.5
-    assert dense_cfg["similarity_method"] == "dot_product"
+    assert bm25_cfg["b"] == 0.75
+    assert bm25_cfg["stopwords"] == "english"
+
     assert dense_cfg["model_id"] == "facebook/contriever"
+    assert dense_cfg["model_revision"] == "2bd46a25019aeea091fd42d1f0fd4801675cf699"
+    assert dense_cfg["pooling"] == "masked_mean"
+    assert dense_cfg["similarity_method"] == "dot_product"
+    assert dense_cfg["embedding_dimension"] == 768
+    assert dense_cfg["normalize_embeddings"] is False
+    assert dense_cfg["max_token_length"] == 512
 
-    # Missing required field in BM25 manifest
-    incomplete_bm25 = {"k1": 1.5}
-    with pytest.raises(
-        ValueError, match="BM25 manifest missing required configuration field: 'method'"
-    ):
-        extract_artifact_configurations(incomplete_bm25, contriever_manifest)
 
-    # Missing required field in Contriever manifest
-    incomplete_dense = {"model_id": "facebook/contriever"}
+def test_extract_artifact_configurations_alternate_fields() -> None:
+    """Test support for max_seq_length and non-None stemmer."""
+    bm25_manifest = {
+        "method": "robertson",
+        "k1": 1.2,
+        "b": 0.6,
+        "stopwords": "none",
+        "stemming": True,
+        "stemmer": "english",
+    }
+    contriever_manifest = {
+        "model_id": "facebook/contriever",
+        "model_revision": "rev1",
+        "pooling": "mean",
+        "similarity_method": "cosine",
+        "embedding_dimension": 512,
+        "normalize_embeddings": True,
+        "max_seq_length": 256,
+    }
+
+    bm25_cfg, dense_cfg = extract_artifact_configurations(
+        bm25_manifest, contriever_manifest
+    )
+    assert bm25_cfg["stemmer"] == "english"
+    assert "max_seq_length" in dense_cfg
+    assert dense_cfg["max_seq_length"] == 256
+    assert "max_token_length" not in dense_cfg
+
+
+@pytest.mark.parametrize(
+    "field", ["method", "k1", "b", "stopwords", "stemming", "stemmer"]
+)
+def test_extract_artifact_configurations_rejects_missing_bm25_field(
+    field: str,
+) -> None:
+    """Test individual rejection of every required BM25 manifest field."""
+    valid_bm25 = {
+        "method": "lucene",
+        "k1": 1.5,
+        "b": 0.75,
+        "stopwords": "english",
+        "stemming": False,
+        "stemmer": None,
+    }
+    valid_contriever = {
+        "model_id": "facebook/contriever",
+        "model_revision": "rev1",
+        "pooling": "masked_mean",
+        "similarity_method": "dot_product",
+        "embedding_dimension": 768,
+        "normalize_embeddings": False,
+        "max_token_length": 512,
+    }
+    del valid_bm25[field]
     with pytest.raises(
         ValueError,
-        match="Contriever manifest missing required configuration field",
+        match=f"BM25 manifest missing required configuration field: '{field}'",
     ):
-        extract_artifact_configurations(bm25_manifest, incomplete_dense)
+        extract_artifact_configurations(valid_bm25, valid_contriever)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "model_id",
+        "model_revision",
+        "pooling",
+        "similarity_method",
+        "embedding_dimension",
+        "normalize_embeddings",
+    ],
+)
+def test_extract_artifact_configurations_rejects_missing_contriever_field(
+    field: str,
+) -> None:
+    """Test individual rejection of every required Contriever manifest field."""
+    valid_bm25 = {
+        "method": "lucene",
+        "k1": 1.5,
+        "b": 0.75,
+        "stopwords": "english",
+        "stemming": False,
+        "stemmer": None,
+    }
+    valid_contriever = {
+        "model_id": "facebook/contriever",
+        "model_revision": "rev1",
+        "pooling": "masked_mean",
+        "similarity_method": "dot_product",
+        "embedding_dimension": 768,
+        "normalize_embeddings": False,
+        "max_token_length": 512,
+    }
+    del valid_contriever[field]
+    with pytest.raises(
+        ValueError,
+        match=f"Contriever manifest missing required configuration field: '{field}'",
+    ):
+        extract_artifact_configurations(valid_bm25, valid_contriever)
+
+
+def test_extract_artifact_configurations_rejects_missing_seq_len() -> None:
+    """Test rejection when neither max_token_length nor max_seq_length is present."""
+    valid_bm25 = {
+        "method": "lucene",
+        "k1": 1.5,
+        "b": 0.75,
+        "stopwords": "english",
+        "stemming": False,
+        "stemmer": None,
+    }
+    valid_contriever = {
+        "model_id": "facebook/contriever",
+        "model_revision": "rev1",
+        "pooling": "masked_mean",
+        "similarity_method": "dot_product",
+        "embedding_dimension": 768,
+        "normalize_embeddings": False,
+    }
+    with pytest.raises(
+        ValueError,
+        match="Contriever manifest missing required sequence length field",
+    ):
+        extract_artifact_configurations(valid_bm25, valid_contriever)
+
+
+def test_extract_artifact_configurations_rejects_non_dict() -> None:
+    """Test rejection when manifest inputs are not dicts."""
+    with pytest.raises(ValueError, match="BM25 manifest must be a dictionary"):
+        extract_artifact_configurations([], {})  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Contriever manifest must be a dictionary"):
+        extract_artifact_configurations({}, "invalid")  # type: ignore[arg-type]
 
 
 def test_load_and_validate_corpus(tmp_path: Path) -> None:
@@ -434,6 +571,33 @@ def test_load_and_validate_queries_rejects_non_string_or_blank_id(
         load_and_validate_queries(blank_id_file)
 
 
+def test_load_and_validate_queries_expected_count(tmp_path: Path) -> None:
+    """Test queries count validation against expected query count."""
+    queries_file = tmp_path / "queries.jsonl"
+    queries_file.write_text(
+        '{"_id": "q1", "text": "First query"}\n{"_id": "q2", "text": "Second query"}\n',
+        encoding="utf-8",
+    )
+
+    # Exact count passes
+    queries = load_and_validate_queries(queries_file, expected_count=2)
+    assert len(queries) == 2
+
+    # Extra queries (got 2, expected 1)
+    with pytest.raises(
+        ValueError,
+        match=r"Query count mismatch for .*: got 2, expected exactly 1\.",
+    ):
+        load_and_validate_queries(queries_file, expected_count=1)
+
+    # Missing queries (got 2, expected 3)
+    with pytest.raises(
+        ValueError,
+        match=r"Query count mismatch for .*: got 2, expected exactly 3\.",
+    ):
+        load_and_validate_queries(queries_file, expected_count=3)
+
+
 def test_load_and_validate_qrels(tmp_path: Path) -> None:
     """Test qrels validation, header checks, and duplicate rejection."""
     qrels_file = tmp_path / "test.tsv"
@@ -507,13 +671,34 @@ def test_verify_retrievers_alignment() -> None:
     contriever_mock.document_ids = ["doc_a", "doc_b"]
     contriever_mock.manifest = {"source_corpus_sha256": "shared_sha_123"}
 
-    # Aligned passes with matching provenance
+    # Aligned passes with matching standard provenance
     verify_retrievers_alignment(
         bm25_mock,
         contriever_mock,
         expected_corpus_sha256="shared_sha_123",
         expected_count=2,
     )
+
+    # Aligned passes with matching custom corpus provenance
+    bm25_mock.manifest = {"source_corpus_sha256": "custom_sha_xyz"}
+    contriever_mock.manifest = {"source_corpus_sha256": "custom_sha_xyz"}
+    verify_retrievers_alignment(
+        bm25_mock,
+        contriever_mock,
+        expected_corpus_sha256="custom_sha_xyz",
+        expected_count=2,
+    )
+
+    # Invalid / empty expected_corpus_sha256 rejected
+    with pytest.raises(
+        ValueError, match="expected_corpus_sha256 must be a non-empty string"
+    ):
+        verify_retrievers_alignment(
+            bm25_mock,
+            contriever_mock,
+            expected_corpus_sha256="",
+            expected_count=2,
+        )
 
     # BM25 provenance mismatch
     bm25_mock.manifest = {"source_corpus_sha256": "wrong_sha"}
@@ -523,17 +708,66 @@ def test_verify_retrievers_alignment() -> None:
         verify_retrievers_alignment(
             bm25_mock,
             contriever_mock,
-            expected_corpus_sha256="shared_sha_123",
+            expected_corpus_sha256="custom_sha_xyz",
             expected_count=2,
         )
-    bm25_mock.manifest = {"source_corpus_sha256": "shared_sha_123"}
+    bm25_mock.manifest = {"source_corpus_sha256": "custom_sha_xyz"}
+
+    # Contriever provenance mismatch
+    contriever_mock.manifest = {"source_corpus_sha256": "different_sha"}
+    with pytest.raises(
+        ValueError, match="Contriever source corpus SHA-256 provenance mismatch"
+    ):
+        verify_retrievers_alignment(
+            bm25_mock,
+            contriever_mock,
+            expected_corpus_sha256="custom_sha_xyz",
+            expected_count=2,
+        )
+    contriever_mock.manifest = {"source_corpus_sha256": "custom_sha_xyz"}
+
+    # Contriever missing or empty provenance
+    contriever_mock.manifest = {"source_corpus_sha256": ""}
+    with pytest.raises(
+        ValueError,
+        match="Contriever manifest is missing or has empty 'source_corpus_sha256'",
+    ):
+        verify_retrievers_alignment(
+            bm25_mock,
+            contriever_mock,
+            expected_corpus_sha256="custom_sha_xyz",
+            expected_count=2,
+        )
+
+    # Contriever missing manifest dict
+    contriever_mock.manifest = None
+    with pytest.raises(
+        ValueError, match="Contriever retriever is missing manifest dictionary"
+    ):
+        verify_retrievers_alignment(
+            bm25_mock,
+            contriever_mock,
+            expected_corpus_sha256="custom_sha_xyz",
+            expected_count=2,
+        )
+    contriever_mock.manifest = {"source_corpus_sha256": "custom_sha_xyz"}
 
     # Count mismatch
     contriever_mock.document_ids = ["doc_a"]
     with pytest.raises(ValueError, match="Document count mismatch between retrievers"):
-        verify_retrievers_alignment(bm25_mock, contriever_mock, expected_count=None)
+        verify_retrievers_alignment(
+            bm25_mock,
+            contriever_mock,
+            expected_corpus_sha256="custom_sha_xyz",
+            expected_count=None,
+        )
 
     # Sequence mismatch
     contriever_mock.document_ids = ["doc_b", "doc_a"]
     with pytest.raises(ValueError, match="alignment mismatch at index 0"):
-        verify_retrievers_alignment(bm25_mock, contriever_mock, expected_count=2)
+        verify_retrievers_alignment(
+            bm25_mock,
+            contriever_mock,
+            expected_corpus_sha256="custom_sha_xyz",
+            expected_count=2,
+        )
