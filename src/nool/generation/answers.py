@@ -62,6 +62,12 @@ def _normalized(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().casefold()
 
 
+_APPROVAL_CONDITION = re.compile(
+    r"\b(?:with|subject to)\s+([a-z][a-z -]{0,40}?\bapproval)\b",
+    re.IGNORECASE,
+)
+
+
 class CompanyAnswerService:
     """Build cited answers and refuse unsupported or stale evidence."""
 
@@ -182,6 +188,7 @@ class CompanyAnswerService:
         by_id = {item.chunk_id: item for item in evidence}
         citations = []
         seen: set[str] = set()
+        repaired_citation_id = False
         for reference in references:
             if not isinstance(reference, dict):
                 return finish("unsupported", NO_EVIDENCE, "invalid_citation")
@@ -189,15 +196,34 @@ class CompanyAnswerService:
             quote = reference.get("quote")
             if (
                 not isinstance(chunk_id, str)
-                or chunk_id not in by_id
-                or chunk_id in seen
                 or not isinstance(quote, str)
                 or len(quote.strip()) < 8
-                or _normalized(quote) not in _normalized(by_id[chunk_id].text)
             ):
                 return finish("unsupported", NO_EVIDENCE, "invalid_citation")
-            seen.add(chunk_id)
-            item = by_id[chunk_id]
+            item = by_id.get(chunk_id)
+            if item is None:
+                matches = [
+                    candidate
+                    for candidate in evidence
+                    if len(chunk_id) == len(candidate.chunk_id)
+                    and sum(
+                        left != right
+                        for left, right in zip(
+                            chunk_id, candidate.chunk_id, strict=True
+                        )
+                    )
+                    == 1
+                    and _normalized(quote) in _normalized(candidate.text)
+                ]
+                if len(matches) != 1:
+                    return finish("unsupported", NO_EVIDENCE, "invalid_citation")
+                item = matches[0]
+                repaired_citation_id = True
+            if item.chunk_id in seen or _normalized(quote) not in _normalized(
+                item.text
+            ):
+                return finish("unsupported", NO_EVIDENCE, "invalid_citation")
+            seen.add(item.chunk_id)
             citations.append(
                 Citation(
                     item.document_id,
@@ -211,6 +237,12 @@ class CompanyAnswerService:
             )
 
         text = answer.strip()
+        for citation in citations:
+            for match in _APPROVAL_CONDITION.finditer(citation.quote):
+                condition = match.group(1).strip()
+                if _normalized(condition) not in _normalized(text):
+                    text = f"{text} {condition.capitalize()} is required."
         if status == "partial":
             text = f"{text} {PARTIAL_NOTE}"
-        return finish(status, text, "accepted", tuple(citations))
+        reason = "accepted_citation_id_repaired" if repaired_citation_id else "accepted"
+        return finish(status, text, reason, tuple(citations))

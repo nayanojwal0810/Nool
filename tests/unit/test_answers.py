@@ -114,6 +114,57 @@ def test_supported_answer_has_traceable_citation(tmp_path: Path) -> None:
     assert hit.chunk_id in result.evidence_chunk_ids
 
 
+def test_unique_quote_repairs_one_character_id_and_keeps_approval(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "flexible.md"
+    source.write_text(
+        "# Flexible Work Policy\n\n## Policy\n\n"
+        "Eligible employees may work remotely up to two days per week "
+        "with manager approval.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="PEO-004",
+        title="Flexible Work Policy",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunk = store.current_chunks("PEO-004")[1]
+    hit = CompanySearchResult(
+        "PEO-004",
+        "Flexible Work Policy",
+        chunk.chunk_id,
+        chunk.section,
+        chunk.page_number,
+        chunk.version,
+        chunk.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+    first = "0" if chunk.chunk_id[0] != "0" else "1"
+    response = {
+        "status": "answered",
+        "answer": "Eligible employees may work remotely up to two days per week.",
+        "citations": [
+            {
+                "evidence_id": first + chunk.chunk_id[1:],
+                "quote": chunk.text,
+            }
+        ],
+    }
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ModelStub(response)
+    ).answer("How many remote days are available?", "employee_demo")
+    assert result.status == "answered"
+    assert result.reason_code == "accepted_citation_id_repaired"
+    assert result.citations[0].chunk_id == chunk.chunk_id
+    assert "Manager approval is required." in result.text
+
+
 def test_policy_passage_is_available_when_search_finds_another_section(
     tmp_path: Path,
 ) -> None:
