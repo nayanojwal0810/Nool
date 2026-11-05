@@ -116,13 +116,13 @@ def test_complete_demo_collection_ingests_and_questions_align(tmp_path: Path) ->
         {entry["document_id"] for entry in documents},
     )
     assert len(documents) == 45
-    assert len(cases) == 110
+    assert len(cases) == 170
     assert len({entry["source"] for entry in documents}) == 45
     assert Counter(case["scenario"] for case in cases) == {
         "direct": 45,
-        "paraphrase": 20,
-        "multiple_sources": 15,
-        "near_miss": 10,
+        "paraphrase": 40,
+        "multiple_sources": 40,
+        "near_miss": 25,
         "access_denied": 7,
         "document_update": 4,
         "permission_change": 4,
@@ -130,6 +130,29 @@ def test_complete_demo_collection_ingests_and_questions_align(tmp_path: Path) ->
     }
     assert all(
         case["source_document_ids"] for case in cases if case["scenario"] == "direct"
+    )
+    answerable = [
+        case
+        for case in cases
+        if case["scenario"] in {"direct", "paraphrase", "multiple_sources", "near_miss"}
+    ]
+    assert len(answerable) == 150
+    assert len({case["question"].strip().casefold() for case in answerable}) == 150
+    assert all(
+        len(case["source_document_ids"]) == 2
+        for case in answerable
+        if case["scenario"] == "multiple_sources"
+    )
+    roles = {
+        "employee_demo": "employee",
+        "hr_demo": "hr_admin",
+        "it_admin_demo": "it_admin",
+    }
+    by_id = {entry["document_id"]: entry for entry in documents}
+    assert all(
+        roles[case["user_id"]] in by_id[document_id]["allowed_roles"]
+        for case in answerable
+        for document_id in case["source_document_ids"]
     )
 
     database = tmp_path / "demo.sqlite"
@@ -169,5 +192,5 @@ def test_question_ids_and_sources_are_plain_json() -> None:
     with path.open(encoding="utf-8") as stream:
         cases = [json.loads(line) for line in stream]
     assert [case["case_id"] for case in cases] == [
-        f"Q{number:03d}" for number in range(1, 111)
+        f"Q{number:03d}" for number in range(1, 171)
     ]
