@@ -6,7 +6,7 @@ Employees often search several policies and guides to answer a simple workplace 
 
 Nool's main search combines BM25, which matches words, and Contriever, which matches meaning. The planned application will check saved evidence first. It will search documents when needed, check the selected passages against current document and access records, and write an answer with citations. It will say when the documents do not support an answer.
 
-The application will use Python, a Streamlit website, SQLite for document and evidence records, and Qwen through Ollama for answers.
+The application will use Python, a Streamlit website, SQLite for document and evidence records, and Qwen3 4B Instruct through Ollama for answers.
 
 Search and document ingestion are working now. The [fictional company collection](data/demo/README.md) has 45 documents and 170 prepared question cases, including 150 source-finding questions. Company hybrid search checks current document versions and demo user roles before returning passages. The [company search evaluation](docs/company_search_evaluation.md) reports measured results. A local [answer path](docs/answer_guide.md) checks evidence and citations. The [answer evaluation](docs/company_answer_evaluation.md) shows that two-source answers and some refusals still need work. Evidence memory and the website are still in development.
 
@@ -47,4 +47,4 @@ Contriever search also needs the dense dependencies and a local copy of the pass
 - [Company search evaluation](docs/company_search_evaluation.md): measured source finding and access checks.
 - [Answer guide](docs/answer_guide.md): cited answers, professional refusals, and model-output review.
 - [Company answer evaluation](docs/company_answer_evaluation.md): measured citation and refusal results, with limits.
-- [Answer evaluation notebook](notebooks/company_answers_colab.ipynb): run all prepared answer cases with a Colab GPU.
+- [GPU answer evaluation notebook](notebooks/qwen3_answer_evaluation_colab.ipynb): compare Qwen3 and Qwen 2.5 on the same prepared cases and save progress to Drive.

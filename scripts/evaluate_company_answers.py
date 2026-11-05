@@ -33,8 +33,10 @@ def main() -> None:
     parser.add_argument("--database", default="data/processed/demo_documents.sqlite")
     parser.add_argument("--index", default="indexes/company")
     parser.add_argument("--questions", default="data/demo/question_cases.jsonl")
-    parser.add_argument("--output", default="outputs/company_answer_predictions.jsonl")
-    parser.add_argument("--model", default="qwen2.5:3b")
+    parser.add_argument(
+        "--output", default="outputs/company_answer_predictions_current.jsonl"
+    )
+    parser.add_argument("--model", default="qwen3:4b-instruct")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument("--timeout", type=int, default=240)
     parser.add_argument("--limit", type=int)
@@ -80,9 +82,10 @@ def main() -> None:
         if len(existing) > len(selected) or any(
             record["case_id"] != case["case_id"]
             or record["question"] != case["question"]
+            or record.get("model") != args.model
             for record, case in zip(existing, selected, strict=False)
         ):
-            raise ValueError("Saved predictions do not match the selected cases")
+            raise ValueError("Saved predictions do not match the model or cases")
     mode = "a" if existing else "w"
     with output.open(mode, encoding="utf-8", newline="\n") as stream:
         for number, case in enumerate(
@@ -94,14 +97,25 @@ def main() -> None:
                 source_coverage = set(case["source_document_ids"]) <= {
                     citation.document_id for citation in result.citations
                 }
+            retrieved_coverage = None
+            if case["scenario"] not in {"access_denied", "unsupported"}:
+                retrieved_coverage = set(case["source_document_ids"]) <= set(
+                    result.retrieved_document_ids
+                )
             record = {
                 "case_id": case["case_id"],
+                "model": args.model,
                 "scenario": case["scenario"],
                 "question": case["question"],
                 "expected_answer": case["expected_answer"],
                 "expected_source_document_ids": case["source_document_ids"],
                 "status": result.status,
+                "reason_code": result.reason_code,
                 "answer": result.text,
+                "retrieved_document_ids": result.retrieved_document_ids,
+                "expected_sources_retrieved": retrieved_coverage,
+                "evidence_chunk_ids": result.evidence_chunk_ids,
+                "model_duration_ms": result.model_duration_ms,
                 "expected_sources_cited": source_coverage,
                 "citations": [
                     {

@@ -47,7 +47,7 @@ class OllamaAnswerModel:
 
     def __init__(
         self,
-        model: str = "qwen2.5:3b",
+        model: str = "qwen3:4b-instruct",
         base_url: str = "http://127.0.0.1:11434",
         timeout_seconds: int = 120,
     ) -> None:

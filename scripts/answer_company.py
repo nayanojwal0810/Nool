@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument("--user", choices=sorted(DEMO_USERS), required=True)
     parser.add_argument("--database", default="data/processed/demo_documents.sqlite")
     parser.add_argument("--index", default="indexes/company")
-    parser.add_argument("--model", default="qwen2.5:3b")
+    parser.add_argument("--model", default="qwen3:4b-instruct")
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
     if args.offline:

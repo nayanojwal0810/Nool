@@ -109,6 +109,9 @@ def test_supported_answer_has_traceable_citation(tmp_path: Path) -> None:
     assert result.citations[0].document_id == "PEO-001"
     assert result.citations[0].quote in hit.text
     assert "Leave Policy" in result.citations[0].label
+    assert result.reason_code == "accepted"
+    assert result.retrieved_document_ids == ("PEO-001",)
+    assert hit.chunk_id in result.evidence_chunk_ids
 
 
 def test_policy_passage_is_available_when_search_finds_another_section(
@@ -146,10 +149,7 @@ def test_policy_passage_is_available_when_search_finds_another_section(
 
     class PolicyModel:
         def generate(self, question: str, evidence: list) -> dict:
-            assert {item.chunk_id for item in evidence} == {
-                procedure.chunk_id,
-                policy.chunk_id,
-            }
+            assert policy.chunk_id in {item.chunk_id for item in evidence}
             return {
                 "status": "answered",
                 "answer": "The calendar is published by 1 December.",
@@ -274,6 +274,8 @@ def test_empty_evidence_and_stale_index_skip_model(tmp_path: Path) -> None:
     ).answer("How much leave?", "employee_demo")
     assert empty.text == NO_EVIDENCE
     assert stale.text == UPDATING
+    assert empty.reason_code == "no_search_results"
+    assert stale.reason_code == "stale_index"
     assert model.calls == 0
 
 
@@ -284,6 +286,7 @@ def test_model_failure_uses_neutral_message(tmp_path: Path) -> None:
     ).answer("How much leave?", "employee_demo")
     assert result.text == MODEL_UNAVAILABLE
     assert result.citations == ()
+    assert result.reason_code == "model_transport_error"
 
 
 def test_ollama_request_contains_only_given_evidence(

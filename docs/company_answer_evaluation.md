@@ -26,4 +26,6 @@ The [company search evaluation](company_search_evaluation.md) found every expect
 
 The citation check confirms that each quoted excerpt appears in a current permitted passage. It does not prove that the full answer follows from that excerpt. We have not assigned a factual-accuracy score to the generated text. The demo users are test identities, not website authentication.
 
-The next answer improvement should focus on selecting fewer, more relevant passages, checking that multi-part answers cover every requested fact, and recording model failure reasons. We should then rerun the same 162 cases with one timeout. The 50,000-passage search benchmark and the question set do not need further reduction.
+The answer path now chooses passages based on the question and records why an answer was unavailable or refused. We checked passage selection on all 150 answerable cases: it kept the expected documents in all 142 cases where hybrid search found them. It selected 783 passages in total, or 5.2 per question on average, with no more than seven for any question. This check measures source retention, not answer quality.
+
+The controlled GPU comparison of Qwen3 4B Instruct and Qwen 2.5 3B has not run yet. It will use the same 162 cases, passage selector, and timeout for both models, including two-source answers and restricted-target refusals. We will report an improvement only after checking the saved answers. The 50,000-passage search benchmark and question set remain fixed.

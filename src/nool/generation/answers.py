@@ -1,11 +1,12 @@
 """Answer company questions from current, authorized evidence."""
 
-import json
 import re
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Protocol
 
 from nool.data.documents import DocumentStore
+from nool.generation.evidence import select_answer_passages
 from nool.retrieval.company import (
     DEMO_USERS,
     CompanyHybridSearch,
@@ -47,6 +48,10 @@ class AnswerResult:
     status: str
     text: str
     citations: tuple[Citation, ...] = ()
+    reason_code: str = ""
+    retrieved_document_ids: tuple[str, ...] = ()
+    evidence_chunk_ids: tuple[str, ...] = ()
+    model_duration_ms: int | None = None
 
 
 class AnswerModel(Protocol):
@@ -93,67 +98,75 @@ class CompanyAnswerService:
                 return False
         return True
 
-    def _include_policy_passages(
-        self, evidence: list[CompanySearchResult]
-    ) -> list[CompanySearchResult]:
-        expanded = []
-        for item in evidence:
-            expanded.append(item)
-            for chunk in self.store.current_chunks(item.document_id):
-                if chunk.section != "Policy" or chunk.chunk_id == item.chunk_id:
-                    continue
-                expanded.append(
-                    CompanySearchResult(
-                        item.document_id,
-                        item.title,
-                        chunk.chunk_id,
-                        chunk.section,
-                        chunk.page_number,
-                        chunk.version,
-                        chunk.text,
-                        item.score,
-                        item.rank,
-                        item.sources,
-                    )
-                )
-        return expanded
-
     def answer(self, question: str, user_id: str, *, top_k: int = 5) -> AnswerResult:
         if not isinstance(question, str) or not question.strip():
             raise ValueError("Question cannot be empty")
         if user_id not in DEMO_USERS:
             raise ValueError("Unknown demo user")
+        retrieved_document_ids: tuple[str, ...] = ()
+        evidence_chunk_ids: tuple[str, ...] = ()
+        model_duration_ms: int | None = None
+
+        def finish(
+            status: str,
+            message: str,
+            reason_code: str,
+            citations: tuple[Citation, ...] = (),
+        ) -> AnswerResult:
+            return AnswerResult(
+                status,
+                message,
+                citations,
+                reason_code,
+                retrieved_document_ids,
+                evidence_chunk_ids,
+                model_duration_ms,
+            )
+
         try:
             evidence = self.search.search(question.strip(), user_id, top_k=top_k)
         except RuntimeError as exc:
             if "outdated" in str(exc):
-                return AnswerResult("unavailable", UPDATING)
+                return finish("unavailable", UPDATING, "stale_index")
             raise
+        retrieved_document_ids = tuple(item.document_id for item in evidence)
         if not evidence:
-            return AnswerResult("unsupported", NO_EVIDENCE)
+            return finish("unsupported", NO_EVIDENCE, "no_search_results")
         if corpus_fingerprint(self.store) != self.search.indexed_fingerprint:
-            return AnswerResult("unavailable", UPDATING)
+            return finish("unavailable", UPDATING, "stale_index")
         if not self._evidence_is_current(evidence, user_id):
-            return AnswerResult("unsupported", NO_EVIDENCE)
-        evidence = self._include_policy_passages(evidence)
+            return finish("unsupported", NO_EVIDENCE, "evidence_changed")
+        evidence = select_answer_passages(question, evidence, self.store)
+        evidence_chunk_ids = tuple(item.chunk_id for item in evidence)
+        if not evidence:
+            return finish("unsupported", NO_EVIDENCE, "no_valid_passages")
         if not self._evidence_is_current(evidence, user_id):
-            return AnswerResult("unsupported", NO_EVIDENCE)
+            return finish("unsupported", NO_EVIDENCE, "evidence_changed")
 
+        started = perf_counter()
         try:
             response = self.model.generate(question.strip(), evidence)
-        except (OSError, TimeoutError, ValueError, json.JSONDecodeError):
-            return AnswerResult("unavailable", MODEL_UNAVAILABLE)
+        except TimeoutError:
+            model_duration_ms = round((perf_counter() - started) * 1000)
+            return finish("unavailable", MODEL_UNAVAILABLE, "model_timeout")
+        except OSError:
+            model_duration_ms = round((perf_counter() - started) * 1000)
+            return finish("unavailable", MODEL_UNAVAILABLE, "model_transport_error")
+        except ValueError:
+            model_duration_ms = round((perf_counter() - started) * 1000)
+            return finish("unavailable", MODEL_UNAVAILABLE, "model_invalid_output")
+        model_duration_ms = round((perf_counter() - started) * 1000)
         if corpus_fingerprint(self.store) != self.search.indexed_fingerprint:
-            return AnswerResult("unavailable", UPDATING)
+            return finish("unavailable", UPDATING, "stale_index")
         if not self._evidence_is_current(evidence, user_id):
-            return AnswerResult("unsupported", NO_EVIDENCE)
+            return finish("unsupported", NO_EVIDENCE, "evidence_changed")
         if not isinstance(response, dict):
-            return AnswerResult("unsupported", NO_EVIDENCE)
+            return finish("unsupported", NO_EVIDENCE, "invalid_response")
         status = response.get("status")
         if status == "unsupported":
-            return AnswerResult("unsupported", NO_EVIDENCE)
+            return finish("unsupported", NO_EVIDENCE, "model_unsupported")
         if status not in {"answered", "partial"}:
-            return AnswerResult("unsupported", NO_EVIDENCE)
+            return finish("unsupported", NO_EVIDENCE, "invalid_response")
         answer = response.get("answer")
         references = response.get("citations")
         if (
@@ -164,14 +177,14 @@ class CompanyAnswerService:
             or not references
             or len(references) > len(evidence)
         ):
-            return AnswerResult("unsupported", NO_EVIDENCE)
+            return finish("unsupported", NO_EVIDENCE, "invalid_response")
 
         by_id = {item.chunk_id: item for item in evidence}
         citations = []
         seen: set[str] = set()
         for reference in references:
             if not isinstance(reference, dict):
-                return AnswerResult("unsupported", NO_EVIDENCE)
+                return finish("unsupported", NO_EVIDENCE, "invalid_citation")
             chunk_id = reference.get("evidence_id")
             quote = reference.get("quote")
             if (
@@ -182,7 +195,7 @@ class CompanyAnswerService:
                 or len(quote.strip()) < 8
                 or _normalized(quote) not in _normalized(by_id[chunk_id].text)
             ):
-                return AnswerResult("unsupported", NO_EVIDENCE)
+                return finish("unsupported", NO_EVIDENCE, "invalid_citation")
             seen.add(chunk_id)
             item = by_id[chunk_id]
             citations.append(
@@ -200,4 +213,4 @@ class CompanyAnswerService:
         text = answer.strip()
         if status == "partial":
             text = f"{text} {PARTIAL_NOTE}"
-        return AnswerResult(status, text, tuple(citations))
+        return finish(status, text, "accepted", tuple(citations))
