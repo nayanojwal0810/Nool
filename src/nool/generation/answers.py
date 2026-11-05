@@ -17,7 +17,7 @@ NO_EVIDENCE = (
     "I couldn't verify an answer from the documents available to you. "
     "Please check with the relevant team before acting on it."
 )
-PARTIAL_NOTE = "I couldn't verify the remaining details from the available documents."
+PARTIAL_NOTE = "I can only confirm the details above from the available documents."
 UPDATING = (
     "The documents are being updated. Please try again after search is refreshed."
 )
@@ -93,6 +93,31 @@ class CompanyAnswerService:
                 return False
         return True
 
+    def _include_policy_passages(
+        self, evidence: list[CompanySearchResult]
+    ) -> list[CompanySearchResult]:
+        expanded = []
+        for item in evidence:
+            expanded.append(item)
+            for chunk in self.store.current_chunks(item.document_id):
+                if chunk.section != "Policy" or chunk.chunk_id == item.chunk_id:
+                    continue
+                expanded.append(
+                    CompanySearchResult(
+                        item.document_id,
+                        item.title,
+                        chunk.chunk_id,
+                        chunk.section,
+                        chunk.page_number,
+                        chunk.version,
+                        chunk.text,
+                        item.score,
+                        item.rank,
+                        item.sources,
+                    )
+                )
+        return expanded
+
     def answer(self, question: str, user_id: str, *, top_k: int = 5) -> AnswerResult:
         if not isinstance(question, str) or not question.strip():
             raise ValueError("Question cannot be empty")
@@ -108,6 +133,9 @@ class CompanyAnswerService:
             return AnswerResult("unsupported", NO_EVIDENCE)
         if corpus_fingerprint(self.store) != self.search.indexed_fingerprint:
             return AnswerResult("unavailable", UPDATING)
+        if not self._evidence_is_current(evidence, user_id):
+            return AnswerResult("unsupported", NO_EVIDENCE)
+        evidence = self._include_policy_passages(evidence)
         if not self._evidence_is_current(evidence, user_id):
             return AnswerResult("unsupported", NO_EVIDENCE)
 

@@ -111,6 +111,63 @@ def test_supported_answer_has_traceable_citation(tmp_path: Path) -> None:
     assert "Leave Policy" in result.citations[0].label
 
 
+def test_policy_passage_is_available_when_search_finds_another_section(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "holiday.md"
+    source.write_text(
+        "# Holiday Calendar\n\n## Policy\n\nThe calendar is published by 1 December."
+        "\n\n## Procedure\n\nCheck the published calendar before travel.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="PEO-003",
+        title="Holiday Calendar",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunks = {chunk.section: chunk for chunk in store.current_chunks("PEO-003")}
+    procedure = chunks["Procedure"]
+    policy = chunks["Policy"]
+    hit = CompanySearchResult(
+        "PEO-003",
+        "Holiday Calendar",
+        procedure.chunk_id,
+        procedure.section,
+        procedure.page_number,
+        procedure.version,
+        procedure.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+
+    class PolicyModel:
+        def generate(self, question: str, evidence: list) -> dict:
+            assert {item.chunk_id for item in evidence} == {
+                procedure.chunk_id,
+                policy.chunk_id,
+            }
+            return {
+                "status": "answered",
+                "answer": "The calendar is published by 1 December.",
+                "citations": [
+                    {
+                        "evidence_id": policy.chunk_id,
+                        "quote": "The calendar is published by 1 December.",
+                    }
+                ],
+            }
+
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, PolicyModel()
+    ).answer("When is the holiday calendar published?", "employee_demo")
+    assert result.status == "answered"
+    assert result.citations[0].section == "Policy"
+
+
 def test_partial_and_unsupported_answers_use_professional_language(
     tmp_path: Path,
 ) -> None:
