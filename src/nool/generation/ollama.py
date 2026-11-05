@@ -14,6 +14,9 @@ requested fact is missing. Answer only the supported part.
 When a policy applies to a stated group, answer with that condition instead of
 assuming the user's membership. Use answered when that condition fully answers
 the question as far as the policy allows.
+Keep any required approval or limit attached to the fact you state.
+For a question about where or how to act, use the passage that gives the action
+or channel. Answer directly; citations show the source.
 Do not guess, use outside knowledge, or mention documents the user cannot see.
 For every supported answer, cite the evidence IDs and copy a short exact quote
 from each cited passage. Return one JSON object with status, answer, and

@@ -168,6 +168,63 @@ def test_policy_passage_is_available_when_search_finds_another_section(
     assert result.citations[0].section == "Policy"
 
 
+def test_reporting_question_selects_the_action_passage(tmp_path: Path) -> None:
+    source = tmp_path / "conduct.md"
+    source.write_text(
+        "# Workplace Conduct Policy\n\n"
+        "## Procedure\n\nRaise a concern with a manager or People Operations. "
+        "Contact People Operations through the confidential channel.\n\n"
+        "## Responsibilities and follow-up\n\nPeople Operations records "
+        "reported concerns in a restricted case file.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="PEO-005",
+        title="Workplace Conduct Policy",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunks = {chunk.section: chunk for chunk in store.current_chunks("PEO-005")}
+    follow_up = chunks["Responsibilities and follow-up"]
+    procedure = chunks["Procedure"]
+    hit = CompanySearchResult(
+        "PEO-005",
+        "Workplace Conduct Policy",
+        follow_up.chunk_id,
+        follow_up.section,
+        follow_up.page_number,
+        follow_up.version,
+        follow_up.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+
+    class ActionModel:
+        def generate(self, question: str, evidence: list) -> dict:
+            assert evidence[0].chunk_id == procedure.chunk_id
+            return {
+                "status": "answered",
+                "answer": "Report to a manager or People Operations.",
+                "citations": [
+                    {
+                        "evidence_id": procedure.chunk_id,
+                        "quote": "Raise a concern with a manager or People Operations.",
+                    }
+                ],
+            }
+
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ActionModel()
+    ).answer(
+        "Where can an employee report a workplace conduct concern?", "employee_demo"
+    )
+    assert result.status == "answered"
+    assert result.citations[0].section == "Procedure"
+
+
 def test_partial_and_unsupported_answers_use_professional_language(
     tmp_path: Path,
 ) -> None:

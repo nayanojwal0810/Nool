@@ -71,6 +71,7 @@ def select_answer_passages(
     question_lower = question.casefold().strip()
     asks_for_number = question_lower.startswith(("how many", "how much", "how long"))
     asks_for_time = question_lower.startswith(("when", "by when"))
+    asks_for_action = question_lower.startswith(("where", "how do", "how can"))
 
     def score(chunk) -> float:
         overlap = question_terms & passage_terms[chunk.chunk_id]
@@ -79,7 +80,11 @@ def select_answer_passages(
         )
         if (asks_for_number or asks_for_time) and _NUMBER.search(chunk.text):
             value += 1
-        if chunk.section in {"Introduction", "Purpose and scope", "Example"}:
+        if asks_for_action and chunk.section == "Procedure" and overlap:
+            value += 2.5
+        if chunk.section == "Introduction":
+            value *= 0.2
+        elif chunk.section in {"Purpose and scope", "Example"}:
             value *= 0.65
         elif chunk.section == "Responsibilities and follow-up":
             value *= 0.85
