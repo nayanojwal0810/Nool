@@ -1,6 +1,7 @@
 """Validate and ingest the fictional company document collection."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -18,6 +19,26 @@ KNOWN_SCENARIOS = {
     "permission_change",
     "unsupported",
 }
+
+
+@dataclass(frozen=True)
+class CollectionSyncResult:
+    created: tuple[str, ...]
+    content_updated: tuple[str, ...]
+    access_changed: tuple[str, ...]
+    archived: tuple[str, ...]
+    reactivated: tuple[str, ...]
+    title_updated: tuple[str, ...]
+
+    @property
+    def requires_rebuild(self) -> bool:
+        return bool(
+            self.created
+            or self.content_updated
+            or self.archived
+            or self.reactivated
+            or self.title_updated
+        )
 
 
 def load_collection(manifest_path: Path | str) -> tuple[str, list[dict]]:
@@ -124,3 +145,58 @@ def ingest_collection(manifest_path: Path | str, database_path: Path | str) -> i
             allowed_roles=entry["allowed_roles"],
         )
     return len(documents)
+
+
+def sync_collection(
+    manifest_path: Path | str, database_path: Path | str
+) -> CollectionSyncResult:
+    """Apply source, access, and removal changes from a validated manifest."""
+    _, entries = load_collection(manifest_path)
+    root = Path(manifest_path).resolve().parent
+    store = DocumentStore(database_path)
+    before = {doc.document_id: doc for doc in store.list_documents()}
+    current_ids = {entry["document_id"] for entry in entries}
+    created: list[str] = []
+    content_updated: list[str] = []
+    access_changed: list[str] = []
+    reactivated: list[str] = []
+    title_updated: list[str] = []
+
+    for entry in entries:
+        document_id = entry["document_id"]
+        previous = before.get(document_id)
+        roles = tuple(sorted(entry["allowed_roles"]))
+        if previous and previous.allowed_roles != roles:
+            store.set_allowed_roles(document_id, list(roles))
+            access_changed.append(document_id)
+        current = store.ingest(
+            root / entry["source"],
+            document_id=document_id,
+            title=entry["title"],
+            owner=entry["owner"],
+            allowed_roles=entry["allowed_roles"],
+        )
+        if previous is None:
+            created.append(document_id)
+        else:
+            if current.version != previous.version:
+                content_updated.append(document_id)
+            if current.title != previous.title:
+                title_updated.append(document_id)
+            if not previous.active:
+                store.activate(document_id)
+                reactivated.append(document_id)
+
+    archived = []
+    for document_id, previous in before.items():
+        if previous.active and document_id not in current_ids:
+            store.archive(document_id)
+            archived.append(document_id)
+    return CollectionSyncResult(
+        tuple(created),
+        tuple(content_updated),
+        tuple(access_changed),
+        tuple(archived),
+        tuple(reactivated),
+        tuple(title_updated),
+    )

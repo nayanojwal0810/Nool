@@ -318,3 +318,12 @@ class DocumentStore:
             )
             if cursor.rowcount == 0:
                 raise KeyError(document_id)
+
+    def activate(self, document_id: str) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE documents SET active = 1, updated_at = ? WHERE document_id = ?",
+                (datetime.now(UTC).isoformat(), document_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(document_id)

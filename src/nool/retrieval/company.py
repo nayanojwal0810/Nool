@@ -67,6 +67,25 @@ def corpus_fingerprint(store: DocumentStore) -> str:
     return hashlib.sha256(json.dumps(state).encode()).hexdigest()
 
 
+def index_matches_store(store: DocumentStore, index_path: Path | str) -> bool:
+    """Check whether a company index matches current content and titles."""
+    root = Path(index_path)
+    fingerprint_file = root / "source_fingerprint.txt"
+    corpus_file = root / "corpus.jsonl"
+    if not fingerprint_file.is_file() or not corpus_file.is_file():
+        return False
+    if fingerprint_file.read_text(encoding="utf-8") != corpus_fingerprint(store):
+        return False
+    documents = {doc.document_id: doc for doc in store.list_documents()}
+    with corpus_file.open(encoding="utf-8") as stream:
+        for line in stream:
+            record = json.loads(line)
+            document = documents.get(record["metadata"]["document_id"])
+            if document is None or record["title"] != document.title:
+                return False
+    return True
+
+
 class CompanyHybridSearch:
     """Fuse indexed passage results and verify every returned passage."""
 
@@ -97,11 +116,21 @@ class CompanyHybridSearch:
 
         role = DEMO_USERS[user_id]
         documents = {doc.document_id: doc for doc in self.store.list_documents()}
-        chunks = {
+        indexed_chunks = {
             chunk.chunk_id: chunk
             for doc in documents.values()
-            if doc.active and role in doc.allowed_roles
+            if doc.active
             for chunk in self.store.current_chunks(doc.document_id)
+        }
+        for indexed in self.bm25.documents:
+            chunk_id = getattr(indexed, "id", None) or indexed.document_id
+            chunk = indexed_chunks.get(chunk_id)
+            if chunk and indexed.title != documents[chunk.document_id].title:
+                raise RuntimeError("Company search index is outdated; rebuild it")
+        chunks = {
+            chunk_id: chunk
+            for chunk_id, chunk in indexed_chunks.items()
+            if role in documents[chunk.document_id].allowed_roles
         }
         depth = max(len(self.bm25.documents), len(self.contriever.document_ids))
 
