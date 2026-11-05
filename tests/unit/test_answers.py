@@ -249,6 +249,7 @@ def test_ollama_request_contains_only_given_evidence(
     assert response == supported(hit)
     request = json.loads(captured["payload"]["messages"][1]["content"])
     assert [item["evidence_id"] for item in request["evidence"]] == [hit.chunk_id]
+    assert "citations" in captured["payload"]["format"]["required"]
     with pytest.raises(ValueError, match="local"):
         OllamaAnswerModel(base_url="https://remote.example")
 

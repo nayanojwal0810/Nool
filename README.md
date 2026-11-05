@@ -46,3 +46,4 @@ Contriever search also needs the dense dependencies and a local copy of the pass
 - [Company search Colab notebook](notebooks/company_search_colab.ipynb): GPU index build and source retrieval checks.
 - [Company search evaluation](docs/company_search_evaluation.md): measured source finding and access checks.
 - [Answer guide](docs/answer_guide.md): cited answers, professional refusals, and model-output review.
+- [Answer evaluation notebook](notebooks/company_answers_colab.ipynb): run all prepared answer cases with a Colab GPU.

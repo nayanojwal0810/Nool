@@ -11,7 +11,11 @@ from nool.generation.answers import CompanyAnswerService
 from nool.generation.ollama import OllamaAnswerModel
 from nool.retrieval.bm25 import BM25Retriever
 from nool.retrieval.company import CompanyHybridSearch
-from nool.retrieval.contriever import ContrieverRetriever, compute_sha256
+from nool.retrieval.contriever import (
+    ContrieverEncoder,
+    ContrieverRetriever,
+    compute_sha256,
+)
 
 INITIAL_SCENARIOS = {
     "direct",
@@ -30,6 +34,7 @@ def main() -> None:
     parser.add_argument("--questions", default="data/demo/question_cases.jsonl")
     parser.add_argument("--output", default="outputs/company_answer_predictions.jsonl")
     parser.add_argument("--model", default="qwen2.5:3b")
+    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
@@ -41,7 +46,11 @@ def main() -> None:
     index = resolve_path(args.index)
     store = DocumentStore(resolve_path(args.database))
     bm25 = BM25Retriever.load(index / "bm25")
-    dense = ContrieverRetriever.load(index / "contriever", index / "corpus.jsonl")
+    dense = ContrieverRetriever.load(
+        index / "contriever",
+        index / "corpus.jsonl",
+        encoder=ContrieverEncoder(device=args.device),
+    )
     if bm25.manifest["source_corpus_sha256"] != compute_sha256(index / "corpus.jsonl"):
         raise RuntimeError("Company search indexes use different corpora")
     fingerprint = (index / "source_fingerprint.txt").read_text(encoding="utf-8")
