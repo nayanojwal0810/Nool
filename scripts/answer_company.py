@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--database", default="data/processed/demo_documents.sqlite")
     parser.add_argument("--index", default="indexes/company")
     parser.add_argument("--model", default="qwen3:4b-instruct")
+    parser.add_argument("--cpu-only", action="store_true")
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
     if args.offline:
@@ -33,7 +34,11 @@ def main() -> None:
         raise RuntimeError("Company search indexes use different corpora")
     fingerprint = (root / "source_fingerprint.txt").read_text(encoding="utf-8")
     search = CompanyHybridSearch(store, bm25, dense, indexed_fingerprint=fingerprint)
-    service = CompanyAnswerService(search, store, OllamaAnswerModel(model=args.model))
+    service = CompanyAnswerService(
+        search,
+        store,
+        OllamaAnswerModel(model=args.model, cpu_only=args.cpu_only),
+    )
     result = service.answer(args.question, args.user)
     print(result.text)
     if result.citations:

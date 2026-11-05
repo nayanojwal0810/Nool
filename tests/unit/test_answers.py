@@ -310,6 +310,8 @@ def test_ollama_request_contains_only_given_evidence(
     request = json.loads(captured["payload"]["messages"][1]["content"])
     assert [item["evidence_id"] for item in request["evidence"]] == [hit.chunk_id]
     assert "citations" in captured["payload"]["format"]["required"]
+    OllamaAnswerModel(cpu_only=True).generate("How much leave?", [hit])
+    assert captured["payload"]["options"]["num_gpu"] == 0
     with pytest.raises(ValueError, match="local"):
         OllamaAnswerModel(base_url="https://remote.example")
 

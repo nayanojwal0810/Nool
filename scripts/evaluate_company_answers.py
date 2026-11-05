@@ -38,6 +38,7 @@ def main() -> None:
     )
     parser.add_argument("--model", default="qwen3:4b-instruct")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--cpu-only", action="store_true")
     parser.add_argument("--timeout", type=int, default=240)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
@@ -47,6 +48,8 @@ def main() -> None:
         parser.error("--limit must be positive")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
+    if args.cpu_only and args.device != "cpu":
+        parser.error("--cpu-only requires --device cpu")
     if args.offline:
         os.environ["HF_HUB_OFFLINE"] = "1"
 
@@ -65,7 +68,11 @@ def main() -> None:
     service = CompanyAnswerService(
         search,
         store,
-        OllamaAnswerModel(model=args.model, timeout_seconds=args.timeout),
+        OllamaAnswerModel(
+            model=args.model,
+            timeout_seconds=args.timeout,
+            cpu_only=args.cpu_only,
+        ),
     )
     with resolve_path(args.questions).open(encoding="utf-8") as stream:
         cases = [json.loads(line) for line in stream]
@@ -83,6 +90,7 @@ def main() -> None:
             record["case_id"] != case["case_id"]
             or record["question"] != case["question"]
             or record.get("model") != args.model
+            or record.get("cpu_only", False) != args.cpu_only
             for record, case in zip(existing, selected, strict=False)
         ):
             raise ValueError("Saved predictions do not match the model or cases")
@@ -105,6 +113,7 @@ def main() -> None:
             record = {
                 "case_id": case["case_id"],
                 "model": args.model,
+                "cpu_only": args.cpu_only,
                 "scenario": case["scenario"],
                 "question": case["question"],
                 "expected_answer": case["expected_answer"],

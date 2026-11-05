@@ -50,6 +50,7 @@ class OllamaAnswerModel:
         model: str = "qwen3:4b-instruct",
         base_url: str = "http://127.0.0.1:11434",
         timeout_seconds: int = 120,
+        cpu_only: bool = False,
     ) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
@@ -59,6 +60,7 @@ class OllamaAnswerModel:
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.cpu_only = cpu_only
 
     def generate(self, question: str, evidence: list[CompanySearchResult]) -> dict:
         passages = [
@@ -72,11 +74,14 @@ class OllamaAnswerModel:
             }
             for item in evidence
         ]
+        options = {"temperature": 0, "num_predict": 350}
+        if self.cpu_only:
+            options["num_gpu"] = 0
         payload = {
             "model": self.model,
             "stream": False,
             "format": ANSWER_SCHEMA,
-            "options": {"temperature": 0, "num_predict": 350},
+            "options": options,
             "messages": [
                 {"role": "system", "content": SYSTEM_INSTRUCTIONS},
                 {
