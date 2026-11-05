@@ -20,6 +20,6 @@ The search returns one best passage per document so repeated passages from one s
 
 ## Limits
 
-The update and permission-change cases are safety checks, not part of the 150-case source retrieval rate. Five unsupported questions remain unscored because answer refusal requires the answer workflow. These checks do not show that the chosen passage contains every detail needed for an answer. The demo user selector is not production authentication.
+The update and permission-change cases are safety checks, not part of the 150-case source retrieval rate. The five unsupported questions are covered in the separate [answer evaluation](company_answer_evaluation.md). These search checks do not show that the chosen passage contains every detail needed for an answer. The demo user selector is not production authentication.
 
 Run `scripts/evaluate_company_search.py` after installing the company index to reproduce the source retrieval check. The script writes detailed counts and failed case IDs to `outputs/company_retrieval_evaluation.json`, which is excluded from Git.
