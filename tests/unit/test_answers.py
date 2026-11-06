@@ -476,6 +476,42 @@ def test_amount_question_keeps_applicable_exception(tmp_path: Path) -> None:
     assert chunks["Exceptions"].chunk_id in {item.chunk_id for item in selected}
 
 
+def test_approval_question_keeps_policy_for_second_document(tmp_path: Path) -> None:
+    source = tmp_path / "remote.md"
+    source.write_text(
+        "# Flexible Work\n\n## Policy\n\nRemote work needs manager approval.\n\n"
+        "## Procedure\n\nAgree remote days with the manager.\n\n"
+        "## Exceptions\n\nManagers may change a remote day.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="PEO-004",
+        title="Flexible Work",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunks = {chunk.section: chunk for chunk in store.current_chunks("PEO-004")}
+    procedure = chunks["Procedure"]
+    hit = CompanySearchResult(
+        "PEO-004",
+        "Flexible Work",
+        procedure.chunk_id,
+        procedure.section,
+        procedure.page_number,
+        procedure.version,
+        procedure.text,
+        0.8,
+        2,
+        ("bm25",),
+    )
+    selected = select_answer_passages(
+        "What approval controls a remote day?", [hit], store
+    )
+    assert chunks["Policy"].chunk_id in {item.chunk_id for item in selected}
+
+
 def test_example_does_not_displace_exception_or_policy(tmp_path: Path) -> None:
     source = tmp_path / "visitors.md"
     source.write_text(

@@ -148,6 +148,7 @@ def select_answer_passages(
         question_lower.startswith(("what", "which", "how"))
         and re.search(r"\bshould (?:i|we)\b", question_lower) is not None
     )
+    asks_for_approval = "approv" in question_lower
 
     def score(chunk) -> float:
         overlap = _matching_terms(question_terms, passage_terms[chunk.chunk_id])
@@ -184,6 +185,18 @@ def select_answer_passages(
             continue
         chosen = [best]
         if document.rank <= 2:
+            approval_policy = next(
+                (
+                    chunk
+                    for chunk in ordered
+                    if asks_for_approval
+                    and chunk.section == "Policy"
+                    and chunk.chunk_id != best.chunk_id
+                    and "approv" in chunk.text.casefold()
+                    and score(chunk) > 0
+                ),
+                None,
+            )
             action_procedure = next(
                 (
                     chunk
@@ -204,10 +217,14 @@ def select_answer_passages(
                 not in {"Introduction", "Purpose and scope", "Example"}
                 and score(chunk) > 0
             )
-            second = action_procedure or next(substantive, None)
+            second = approval_policy or action_procedure or next(substantive, None)
             if second is not None:
                 chosen.append(second)
-            if action_procedure is not None and document.rank == 2:
+            if (
+                second is action_procedure
+                and action_procedure is not None
+                and document.rank == 2
+            ):
                 chosen = [action_procedure, best]
         if document.rank == 1:
             question_numbers = set(_NUMBER.findall(question))

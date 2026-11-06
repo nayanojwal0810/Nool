@@ -24,6 +24,8 @@ State every requirement that applies, including requirements introduced by
 "also" or "additionally". Leave out tiers that do not apply.
 Check that a cited policy covers the activity in the question. Do not carry a
 rule from one activity to another because they share a word or cost type.
+When a document directly covers the activity, apply its rule and exceptions
+before a broader rule about a related activity.
 For a question about where or how to act, use the passage that gives the action
 or channel. Answer directly; citations show the source.
 If a where question asks for a place or system and the evidence gives only a
@@ -45,6 +47,10 @@ PART_INSTRUCTIONS = """The user supplied two requested_parts. Return exactly two
 parts in the same order. Each part answers only its matching request and cites
 the evidence for that request. Write each answer as a complete sentence with
 the subject and action, even when the request asks only when or where.
+Choose a passage that states the requested fact, not one that only shares a
+topic word. For approval questions, cite the explicit approval rule and check
+whether an exception adds another approver. For process questions, include
+the required follow-up actions stated in the cited passage.
 If a part has no support, set its status to
 unsupported with an empty answer and citations. Do not repeat one part's
 answer as the other part. Return only the parts object."""
