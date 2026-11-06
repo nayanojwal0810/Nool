@@ -7,7 +7,7 @@ from typing import Protocol
 
 from nool.data.documents import DocumentStore
 from nool.generation.evidence import select_answer_passages
-from nool.generation.questions import explicit_question_parts
+from nool.generation.questions import explicit_question_parts, focused_question
 from nool.retrieval.company import (
     DEMO_USERS,
     CompanyHybridSearch,
@@ -61,6 +61,20 @@ class AnswerModel(Protocol):
 
 def _normalized(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().casefold()
+
+
+def _unique_ranked(
+    candidates: list[CompanySearchResult], limit: int
+) -> list[CompanySearchResult]:
+    results = []
+    seen: set[str] = set()
+    for item in candidates:
+        if item.document_id not in seen:
+            seen.add(item.document_id)
+            results.append(replace(item, rank=len(results) + 1))
+            if len(results) == limit:
+                break
+    return results
 
 
 _APPROVAL_CONDITION = re.compile(
@@ -145,17 +159,18 @@ class CompanyAnswerService:
                     self.search.search(part, user_id, top_k=1)[0:1]
                     for part in requested_parts
                 ]
-                candidates = [*part_hits[0], *part_hits[1], *original]
-                seen_documents: set[str] = set()
-                evidence = []
-                for item in candidates:
-                    if item.document_id not in seen_documents:
-                        seen_documents.add(item.document_id)
-                        evidence.append(replace(item, rank=len(evidence) + 1))
-                        if len(evidence) == top_k:
-                            break
+                evidence = _unique_ranked(
+                    [*part_hits[0], *part_hits[1], *original], top_k
+                )
             else:
-                evidence = original
+                focus = focused_question(question)
+                if focus != question.strip():
+                    focused = self.search.search(focus, user_id, top_k=2)
+                    evidence = _unique_ranked(
+                        [*original[:1], *focused, *original[1:]], top_k
+                    )
+                else:
+                    evidence = original
         except RuntimeError as exc:
             if "outdated" in str(exc):
                 return finish("unavailable", UPDATING, "stale_index")

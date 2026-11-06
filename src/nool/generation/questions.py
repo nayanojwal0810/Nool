@@ -9,6 +9,10 @@ _TWO_ACTIONS = re.compile(
     r"\bhow (?:should|can|do) (?:i|we)\s+(.+?)\s+and\s+(.+?)\?\s*$",
     re.IGNORECASE,
 )
+_CONTEXT_AND_QUESTION = re.compile(
+    r"(?:[.!?]|,)\s+(?=(?:what|when|where|which|who|how|why|does|do|should|can)\b)",
+    re.IGNORECASE,
+)
 
 
 def explicit_question_parts(question: str) -> tuple[str, ...]:
@@ -23,3 +27,9 @@ def explicit_question_parts(question: str) -> tuple[str, ...]:
     if match is not None and len(match.group(2).split()) >= 2:
         return match.group(1).strip(), match.group(2).strip()
     return ()
+
+
+def focused_question(question: str) -> str:
+    """Remove an introductory situation when the final question stands alone."""
+    matches = list(_CONTEXT_AND_QUESTION.finditer(question))
+    return question[matches[-1].end() :].strip() if matches else question.strip()

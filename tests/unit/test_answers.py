@@ -16,7 +16,7 @@ from nool.generation.answers import (
 )
 from nool.generation.evidence import select_answer_passages
 from nool.generation.ollama import OllamaAnswerModel
-from nool.generation.questions import explicit_question_parts
+from nool.generation.questions import explicit_question_parts, focused_question
 from nool.retrieval.company import CompanySearchResult, corpus_fingerprint
 
 
@@ -117,6 +117,16 @@ def supported(hit: CompanySearchResult, status: str = "answered") -> dict:
 )
 def test_explicit_question_parts(question: str, expected: tuple[str, ...]) -> None:
     assert explicit_question_parts(question) == expected
+
+
+def test_focused_question_keeps_the_request_after_context() -> None:
+    assert (
+        focused_question(
+            "After an approved dinner, what is the expense claim deadline?"
+        )
+        == "what is the expense claim deadline?"
+    )
+    assert focused_question("How much leave do I get?") == "How much leave do I get?"
 
 
 def test_supported_answer_has_traceable_citation(tmp_path: Path) -> None:
@@ -600,6 +610,47 @@ def test_two_parts_require_valid_evidence_from_each_document(tmp_path: Path) -> 
     assert invalid.status == "unsupported"
     assert invalid.reason_code == "invalid_citation"
     assert invalid.citations == ()
+
+
+def test_focused_search_recovers_a_document_missed_by_context_search(
+    tmp_path: Path,
+) -> None:
+    _, store, leave = setup_policy(tmp_path)
+    source = tmp_path / "meeting.md"
+    source.write_text(
+        "# Meeting Guide\n\n## Policy\n\nRecord meeting decisions.",
+        encoding="utf-8",
+    )
+    store.ingest(
+        source,
+        document_id="OPS-001",
+        title="Meeting Guide",
+        owner="Operations",
+        allowed_roles=["employee"],
+    )
+    chunk = store.current_chunks("OPS-001")[1]
+    meeting = CompanySearchResult(
+        "OPS-001",
+        "Meeting Guide",
+        chunk.chunk_id,
+        chunk.section,
+        chunk.page_number,
+        chunk.version,
+        chunk.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+
+    class FocusSearch(SearchStub):
+        def search(self, question: str, user_id: str, top_k: int = 5) -> list:
+            return [leave] if question.startswith("how much") else [meeting]
+
+    result = CompanyAnswerService(
+        FocusSearch(store, [meeting]), store, ModelStub(supported(leave))
+    ).answer("After a team meeting, how much paid leave do I get?", "employee_demo")
+    assert result.status == "answered"
+    assert result.retrieved_document_ids == ("OPS-001", "PEO-001")
 
 
 def test_partial_and_unsupported_answers_use_professional_language(
