@@ -7,6 +7,7 @@ from typing import Protocol
 
 from nool.data.documents import DocumentStore
 from nool.generation.evidence import select_answer_passages
+from nool.generation.questions import explicit_question_parts
 from nool.retrieval.company import (
     DEMO_USERS,
     CompanyHybridSearch,
@@ -175,6 +176,48 @@ class CompanyAnswerService:
             return finish("unsupported", NO_EVIDENCE, "evidence_changed")
         if not isinstance(response, dict):
             return finish("unsupported", NO_EVIDENCE, "invalid_response")
+        requested_parts = explicit_question_parts(question)
+        if requested_parts:
+            parts = response.get("parts")
+            if not isinstance(parts, list) or len(parts) != len(requested_parts):
+                return finish("unsupported", NO_EVIDENCE, "invalid_response")
+            part_answers = []
+            part_references = []
+            part_statuses = []
+            for part in parts:
+                if not isinstance(part, dict):
+                    return finish("unsupported", NO_EVIDENCE, "invalid_response")
+                part_status = part.get("status")
+                part_answer = part.get("answer")
+                references = part.get("citations")
+                if part_status == "unsupported":
+                    if part_answer or references:
+                        return finish("unsupported", NO_EVIDENCE, "invalid_response")
+                elif (
+                    part_status not in {"answered", "partial"}
+                    or not isinstance(part_answer, str)
+                    or not part_answer.strip()
+                    or not isinstance(references, list)
+                    or not references
+                ):
+                    return finish("unsupported", NO_EVIDENCE, "invalid_response")
+                else:
+                    part_answers.append(part_answer.strip().rstrip(". "))
+                    part_references.extend(references)
+                part_statuses.append(part_status)
+            if not part_answers:
+                return finish("unsupported", NO_EVIDENCE, "model_unsupported")
+            response = {
+                "status": (
+                    "answered"
+                    if all(status == "answered" for status in part_statuses)
+                    else "partial"
+                ),
+                "answer": ". ".join(part_answers) + ".",
+                "citations": part_references,
+            }
+        elif "parts" in response:
+            return finish("unsupported", NO_EVIDENCE, "invalid_response")
         status = response.get("status")
         if status == "unsupported":
             return finish("unsupported", NO_EVIDENCE, "model_unsupported")
@@ -188,7 +231,7 @@ class CompanyAnswerService:
             or len(answer) > 800
             or not isinstance(references, list)
             or not references
-            or len(references) > len(evidence)
+            or len(references) > len(evidence) * (2 if requested_parts else 1)
         ):
             return finish("unsupported", NO_EVIDENCE, "invalid_response")
 
@@ -226,9 +269,11 @@ class CompanyAnswerService:
                     return finish("unsupported", NO_EVIDENCE, "invalid_citation")
                 item = matches[0]
                 repaired_citation_id = True
-            if item.chunk_id in seen or _normalized(quote) not in _normalized(
-                item.text
-            ):
+            if _normalized(quote) not in _normalized(item.text):
+                return finish("unsupported", NO_EVIDENCE, "invalid_citation")
+            if item.chunk_id in seen:
+                if requested_parts:
+                    continue
                 return finish("unsupported", NO_EVIDENCE, "invalid_citation")
             seen.add(item.chunk_id)
             citations.append(

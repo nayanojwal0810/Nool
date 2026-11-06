@@ -1,10 +1,10 @@
 """Local Ollama adapter for evidence-grounded company answers."""
 
 import json
-import re
 from urllib.parse import urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
+from nool.generation.questions import explicit_question_parts
 from nool.retrieval.company import CompanySearchResult
 
 SYSTEM_INSTRUCTIONS = """You answer employee questions using only the supplied evidence.
@@ -26,16 +26,19 @@ For questions with several requested facts, cover each supported fact and cite
 its source. Keep the answer under 80 words and each exact quote under 20 words.
 When the question names two items joined by "and", answer both items before
 returning answered. If only one item is supported, return partial.
-When a question asks for two actions, explain each action in its own sentence.
-Before returning answered, check that the answer covers every requested action
-and that each action has a matching cited passage.
-If requested_actions are supplied, address each listed action in order.
 Do not guess, use outside knowledge, or mention documents the user cannot see.
 For every supported answer, cite the evidence IDs and copy a short exact quote
-from each cited passage. Return one JSON object with status, answer, and
-citations. Status must be answered, partial, or unsupported. Each citation
-must contain evidence_id and quote. For unsupported, use an empty answer
-and citation list."""
+from each cited passage. Each citation must contain evidence_id and quote.
+For unsupported, use an empty answer and citation list."""
+
+SINGLE_INSTRUCTIONS = """Return one JSON object with status, answer, and
+citations. Status must be answered, partial, or unsupported."""
+
+PART_INSTRUCTIONS = """The user supplied two requested_parts. Return exactly two
+parts in the same order. Each part answers only its matching request and cites
+the evidence for that request. If a part has no support, set its status to
+unsupported with an empty answer and citations. Do not repeat one part's
+answer as the other part. Return only the parts object."""
 
 ANSWER_SCHEMA = {
     "type": "object",
@@ -57,16 +60,18 @@ ANSWER_SCHEMA = {
     "required": ["status", "answer", "citations"],
 }
 
-_TWO_ACTIONS = re.compile(
-    r"\bhow should (?:i|we)\s+(.+?)\s+and\s+(.+?)\?\s*$", re.IGNORECASE
-)
-
-
-def _requested_actions(question: str) -> list[str]:
-    match = _TWO_ACTIONS.search(question)
-    if match is None or len(match.group(2).split()) < 2:
-        return []
-    return [match.group(1).strip(), match.group(2).strip()]
+PARTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "parts": {
+            "type": "array",
+            "items": ANSWER_SCHEMA,
+            "minItems": 2,
+            "maxItems": 2,
+        }
+    },
+    "required": ["parts"],
+}
 
 
 class OllamaAnswerModel:
@@ -90,6 +95,7 @@ class OllamaAnswerModel:
         self.cpu_only = cpu_only
 
     def generate(self, question: str, evidence: list[CompanySearchResult]) -> dict:
+        requested_parts = explicit_question_parts(question)
         evidence_ids = {
             f"E{number}": item.chunk_id for number, item in enumerate(evidence, start=1)
         }
@@ -104,22 +110,27 @@ class OllamaAnswerModel:
             }
             for number, item in enumerate(evidence, start=1)
         ]
-        options = {"temperature": 0, "num_predict": 220}
+        options = {"temperature": 0, "num_predict": 300 if requested_parts else 220}
         if self.cpu_only:
             options["num_gpu"] = 0
         payload = {
             "model": self.model,
             "stream": False,
-            "format": ANSWER_SCHEMA,
+            "format": PARTS_SCHEMA if requested_parts else ANSWER_SCHEMA,
             "options": options,
             "messages": [
-                {"role": "system", "content": SYSTEM_INSTRUCTIONS},
+                {
+                    "role": "system",
+                    "content": SYSTEM_INSTRUCTIONS
+                    + "\n"
+                    + (PART_INSTRUCTIONS if requested_parts else SINGLE_INSTRUCTIONS),
+                },
                 {
                     "role": "user",
                     "content": json.dumps(
                         {
                             "question": question,
-                            "requested_actions": _requested_actions(question),
+                            "requested_parts": requested_parts,
                             "evidence": passages,
                         },
                         ensure_ascii=False,
@@ -141,10 +152,19 @@ class OllamaAnswerModel:
             result = json.loads(content)
         except (KeyError, TypeError) as exc:
             raise ValueError("Ollama returned an invalid response") from exc
-        if isinstance(result, dict) and isinstance(result.get("citations"), list):
-            for citation in result["citations"]:
-                if isinstance(citation, dict):
-                    short_id = citation.get("evidence_id")
-                    if isinstance(short_id, str):
-                        citation["evidence_id"] = evidence_ids.get(short_id, short_id)
+        outputs = (
+            result.get("parts")
+            if requested_parts and isinstance(result, dict)
+            else [result]
+        )
+        if isinstance(outputs, list):
+            for part in outputs:
+                if isinstance(part, dict) and isinstance(part.get("citations"), list):
+                    for citation in part["citations"]:
+                        if isinstance(citation, dict):
+                            short_id = citation.get("evidence_id")
+                            if isinstance(short_id, str):
+                                citation["evidence_id"] = evidence_ids.get(
+                                    short_id, short_id
+                                )
         return result

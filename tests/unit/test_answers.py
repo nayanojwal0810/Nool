@@ -15,6 +15,7 @@ from nool.generation.answers import (
     CompanyAnswerService,
 )
 from nool.generation.ollama import OllamaAnswerModel
+from nool.generation.questions import explicit_question_parts
 from nool.retrieval.company import CompanySearchResult, corpus_fingerprint
 
 
@@ -96,6 +97,25 @@ def supported(hit: CompanySearchResult, status: str = "answered") -> dict:
             }
         ],
     }
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        (
+            "What details go into the decision record, and when is it saved?",
+            ("What details go into the decision record", "when is it saved"),
+        ),
+        (
+            "How should I handle the visitor and report the repair?",
+            ("handle the visitor", "report the repair"),
+        ),
+        ("Who needs manager and Finance approval?", ()),
+        ("How should I plan leave around holidays?", ()),
+    ],
+)
+def test_explicit_question_parts(question: str, expected: tuple[str, ...]) -> None:
+    assert explicit_question_parts(question) == expected
 
 
 def test_supported_answer_has_traceable_citation(tmp_path: Path) -> None:
@@ -458,19 +478,92 @@ def test_one_source_can_answer_two_parts_when_it_contains_both_facts(
         2,
         ("contriever",),
     )
+    response = {"parts": [supported(leave), supported(leave)]}
     result = CompanyAnswerService(
-        SearchStub(store, [leave, holiday]), store, ModelStub(supported(leave))
+        SearchStub(store, [leave, holiday]), store, ModelStub(response)
     ).answer("Which employees receive leave and how many days?", "employee_demo")
     assert result.status == "answered"
     assert result.citations[0].document_id == "PEO-001"
+    bad_second = supported(leave)
+    bad_second["citations"][0]["quote"] = "Invented leave rule."
+    rejected = CompanyAnswerService(
+        SearchStub(store, [leave, holiday]),
+        store,
+        ModelStub({"parts": [supported(leave), bad_second]}),
+    ).answer("Which employees receive leave and how many days?", "employee_demo")
+    assert rejected.reason_code == "invalid_citation"
+
+
+def test_two_parts_require_valid_evidence_from_each_document(tmp_path: Path) -> None:
+    _, store, leave = setup_policy(tmp_path)
+    source = tmp_path / "holiday.md"
+    source.write_text(
+        "# Holiday Calendar\n\n## Policy\n\n"
+        "The holiday calendar is published by 1 December.",
+        encoding="utf-8",
+    )
+    store.ingest(
+        source,
+        document_id="PEO-003",
+        title="Holiday Calendar",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunk = store.current_chunks("PEO-003")[1]
+    holiday = CompanySearchResult(
+        "PEO-003",
+        "Holiday Calendar",
+        chunk.chunk_id,
+        chunk.section,
+        chunk.page_number,
+        chunk.version,
+        chunk.text,
+        0.9,
+        2,
+        ("contriever",),
+    )
+    holiday_part = {
+        "status": "answered",
+        "answer": "The holiday calendar is published by 1 December.",
+        "citations": [
+            {
+                "evidence_id": holiday.chunk_id,
+                "quote": "The holiday calendar is published by 1 December.",
+            }
+        ],
+    }
+    question = "How much paid leave do I get and when is the calendar published?"
+    search = SearchStub(store, [leave, holiday])
+    complete = CompanyAnswerService(
+        search, store, ModelStub({"parts": [supported(leave), holiday_part]})
+    ).answer(question, "employee_demo")
+    assert complete.status == "answered"
+    assert {item.document_id for item in complete.citations} == {"PEO-001", "PEO-003"}
+
+    invalid_part = {
+        **holiday_part,
+        "citations": [{"evidence_id": holiday.chunk_id, "quote": "Invented date."}],
+    }
+    invalid = CompanyAnswerService(
+        search, store, ModelStub({"parts": [supported(leave), invalid_part]})
+    ).answer(question, "employee_demo")
+    assert invalid.status == "unsupported"
+    assert invalid.reason_code == "invalid_citation"
+    assert invalid.citations == ()
 
 
 def test_partial_and_unsupported_answers_use_professional_language(
     tmp_path: Path,
 ) -> None:
     _, store, hit = setup_policy(tmp_path)
+    response = {
+        "parts": [
+            supported(hit),
+            {"status": "unsupported", "answer": "", "citations": []},
+        ]
+    }
     partial = CompanyAnswerService(
-        SearchStub(store, [hit]), store, ModelStub(supported(hit, "partial"))
+        SearchStub(store, [hit]), store, ModelStub(response)
     ).answer("How much leave and what tax?", "employee_demo")
     assert partial.status == "partial"
     assert PARTIAL_NOTE in partial.text
@@ -595,8 +688,12 @@ def test_ollama_request_contains_only_given_evidence(
     class Opener:
         def open(self, request, timeout):
             captured["payload"] = json.loads(request.data)
-            response = supported(hit)
-            response["citations"][0]["evidence_id"] = "E1"
+            part = supported(hit)
+            part["citations"][0]["evidence_id"] = "E1"
+            request_body = json.loads(captured["payload"]["messages"][1]["content"])
+            response = (
+                {"parts": [part, part]} if request_body["requested_parts"] else part
+            )
             return io.BytesIO(
                 json.dumps({"message": {"content": json.dumps(response)}}).encode()
             )
@@ -606,18 +703,23 @@ def test_ollama_request_contains_only_given_evidence(
     assert response == supported(hit)
     request = json.loads(captured["payload"]["messages"][1]["content"])
     assert [item["evidence_id"] for item in request["evidence"]] == ["E1"]
-    assert request["requested_actions"] == []
+    assert request["requested_parts"] == []
     assert "citations" in captured["payload"]["format"]["required"]
-    OllamaAnswerModel().generate(
+    response = OllamaAnswerModel().generate(
         "A visitor notices a broken door. How should I handle the visitor "
         "and report the repair?",
         [hit],
     )
     request = json.loads(captured["payload"]["messages"][1]["content"])
-    assert request["requested_actions"] == [
+    assert request["requested_parts"] == [
         "handle the visitor",
         "report the repair",
     ]
+    assert [part["citations"][0]["evidence_id"] for part in response["parts"]] == [
+        hit.chunk_id,
+        hit.chunk_id,
+    ]
+    assert captured["payload"]["format"]["properties"]["parts"]["minItems"] == 2
     OllamaAnswerModel(cpu_only=True).generate("How much leave?", [hit])
     assert captured["payload"]["options"]["num_gpu"] == 0
     with pytest.raises(ValueError, match="local"):

@@ -26,4 +26,4 @@ Hybrid search found every expected document for 142 of the 150 answerable questi
 
 An earlier Qwen 2.5 3B run cited every expected source in 86 of 150 answerable cases. It used a different passage selector and mixed timeouts, so these runs do not isolate the effect of changing models. Citation coverage also does not prove that every answer is factually correct. A full human review of the answer text remains to be done.
 
-The next answer change should make two-source questions use a bounded amount of evidence and finish within a practical time. It must also reject answers that address a related policy instead of the user's question. We will rerun the same cases after those changes before reporting an improvement.
+These results were recorded before the current separate-part answer path. That path checks two clear requests separately, but it has not yet been measured on the full question set. We will review fresh questions and rerun the complete set before reporting any improvement. Answers that address a related policy instead of the user's question remain a risk to check manually.
