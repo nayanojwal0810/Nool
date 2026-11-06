@@ -606,7 +606,18 @@ def test_ollama_request_contains_only_given_evidence(
     assert response == supported(hit)
     request = json.loads(captured["payload"]["messages"][1]["content"])
     assert [item["evidence_id"] for item in request["evidence"]] == ["E1"]
+    assert request["requested_actions"] == []
     assert "citations" in captured["payload"]["format"]["required"]
+    OllamaAnswerModel().generate(
+        "A visitor notices a broken door. How should I handle the visitor "
+        "and report the repair?",
+        [hit],
+    )
+    request = json.loads(captured["payload"]["messages"][1]["content"])
+    assert request["requested_actions"] == [
+        "handle the visitor",
+        "report the repair",
+    ]
     OllamaAnswerModel(cpu_only=True).generate("How much leave?", [hit])
     assert captured["payload"]["options"]["num_gpu"] == 0
     with pytest.raises(ValueError, match="local"):

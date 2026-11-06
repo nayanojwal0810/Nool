@@ -1,6 +1,7 @@
 """Local Ollama adapter for evidence-grounded company answers."""
 
 import json
+import re
 from urllib.parse import urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
@@ -28,6 +29,7 @@ returning answered. If only one item is supported, return partial.
 When a question asks for two actions, explain each action in its own sentence.
 Before returning answered, check that the answer covers every requested action
 and that each action has a matching cited passage.
+If requested_actions are supplied, address each listed action in order.
 Do not guess, use outside knowledge, or mention documents the user cannot see.
 For every supported answer, cite the evidence IDs and copy a short exact quote
 from each cited passage. Return one JSON object with status, answer, and
@@ -54,6 +56,17 @@ ANSWER_SCHEMA = {
     },
     "required": ["status", "answer", "citations"],
 }
+
+_TWO_ACTIONS = re.compile(
+    r"\bhow should (?:i|we)\s+(.+?)\s+and\s+(.+?)\?\s*$", re.IGNORECASE
+)
+
+
+def _requested_actions(question: str) -> list[str]:
+    match = _TWO_ACTIONS.search(question)
+    if match is None or len(match.group(2).split()) < 2:
+        return []
+    return [match.group(1).strip(), match.group(2).strip()]
 
 
 class OllamaAnswerModel:
@@ -104,7 +117,12 @@ class OllamaAnswerModel:
                 {
                     "role": "user",
                     "content": json.dumps(
-                        {"question": question, "evidence": passages}, ensure_ascii=False
+                        {
+                            "question": question,
+                            "requested_actions": _requested_actions(question),
+                            "evidence": passages,
+                        },
+                        ensure_ascii=False,
                     ),
                 },
             ],
