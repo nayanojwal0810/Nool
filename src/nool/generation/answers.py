@@ -222,11 +222,9 @@ class CompanyAnswerService:
                 part_answer = part.get("answer")
                 references = part.get("citations")
                 if part_status == "unsupported":
-                    if part_answer or references:
-                        return finish(
-                            "unsupported", NO_EVIDENCE, "invalid_unsupported_part"
-                        )
-                elif (
+                    part_statuses.append(part_status)
+                    continue
+                if (
                     part_status not in {"answered", "partial"}
                     or not isinstance(part_answer, str)
                     or not part_answer.strip()
@@ -234,9 +232,8 @@ class CompanyAnswerService:
                     or not references
                 ):
                     return finish("unsupported", NO_EVIDENCE, "invalid_part")
-                else:
-                    part_answers.append(part_answer.strip().rstrip(". "))
-                    part_references.extend(references)
+                part_answers.append(part_answer.strip().rstrip(". "))
+                part_references.extend(references)
                 part_statuses.append(part_status)
             if not part_answers:
                 return finish("unsupported", NO_EVIDENCE, "model_unsupported")

@@ -730,6 +730,22 @@ def test_partial_and_unsupported_answers_use_professional_language(
     assert partial.status == "partial"
     assert PARTIAL_NOTE in partial.text
     assert partial.citations
+    inconsistent = {
+        "parts": [
+            supported(hit),
+            {
+                "status": "unsupported",
+                "answer": "This unsupported text must not be displayed.",
+                "citations": [{"evidence_id": "unknown"}],
+            },
+        ]
+    }
+    limited = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ModelStub(inconsistent)
+    ).answer("How much leave and what tax?", "employee_demo")
+    assert limited.status == "partial"
+    assert "unsupported text" not in limited.text
+    assert limited.citations[0].document_id == "PEO-001"
 
     unsupported = CompanyAnswerService(
         SearchStub(store, [hit]),
