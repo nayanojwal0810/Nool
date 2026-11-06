@@ -172,6 +172,13 @@ def test_citation_quote_is_copied_from_the_relevant_source_sentence() -> None:
         "A manager approves the purchase. "
         "Finance also approves purchases above INR 25,000."
     )
+    additive = select_citation_quote(
+        "A manager approves the purchase. "
+        "Purchases above INR 25,000 also need Finance approval.",
+        "Who approves a purchase of INR 35,000?",
+        "Finance approval is needed.",
+    )
+    assert additive.startswith("A manager approves the purchase.")
 
 
 def test_supported_answer_has_traceable_citation(tmp_path: Path) -> None:
@@ -644,6 +651,15 @@ def test_two_parts_require_valid_evidence_from_each_document(tmp_path: Path) -> 
     assert complete.status == "answered"
     assert {item.document_id for item in complete.citations} == {"PEO-001", "PEO-003"}
     assert complete.retrieved_document_ids == ("PEO-001", "PEO-003")
+    assert complete.reason_code == "accepted_source_worded"
+    misleading_part = {**holiday_part, "answer": "E2 says 2 January."}
+    source_worded = CompanyAnswerService(
+        search, store, ModelStub({"parts": [supported(leave), misleading_part]})
+    ).answer(question, "employee_demo")
+    assert source_worded.status == "answered"
+    assert "1 December" in source_worded.text
+    assert "2 January" not in source_worded.text
+    assert "E2" not in source_worded.text
 
     invalid_part = {
         **holiday_part,

@@ -21,6 +21,7 @@ _SECTION_PREFIX = re.compile(
     r"^(?:policy|procedure|responsibilities and follow-up|exceptions|example)\s+",
     re.IGNORECASE,
 )
+_ADDITIVE_REQUIREMENT = re.compile(r"\b(?:also|additionally)\b", re.IGNORECASE)
 _STOP_WORDS = {
     "a",
     "an",
@@ -80,6 +81,14 @@ def select_citation_quote(passage: str, question: str, answer: str) -> str:
         score = 2 * len(terms & answer_terms) + len(terms & question_terms)
         ranked.append((score, -index, index))
     best = max(ranked)[2]
+    first = best
+    while first > 0 and _ADDITIVE_REQUIREMENT.search(sentences[first]):
+        candidate = " ".join(sentences[first - 1 : best + 1])
+        if len(candidate.split()) > 60:
+            break
+        first -= 1
+    if first < best:
+        return _SECTION_PREFIX.sub("", " ".join(sentences[first : best + 1]))
     neighbors = [index for index in (best - 1, best + 1) if 0 <= index < len(sentences)]
     if neighbors:
         added = max(

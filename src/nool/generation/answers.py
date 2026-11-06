@@ -267,7 +267,7 @@ class CompanyAnswerService:
             or len(references) > len(evidence) * (2 if requested_parts else 1)
         ):
             return finish("unsupported", NO_EVIDENCE, "invalid_response")
-        if re.search(r"\bE\d+\b", answer) is not None:
+        if not requested_parts and re.search(r"\bE\d+\b", answer) is not None:
             return finish("unsupported", NO_EVIDENCE, "internal_evidence_id")
 
         by_id = {item.chunk_id: item for item in evidence}
@@ -323,12 +323,20 @@ class CompanyAnswerService:
                 )
             )
 
+        text = (
+            " ".join(citation.quote for citation in citations)
+            if requested_parts
+            else answer.strip()
+        )
+        if len(text) > 800:
+            return finish("unsupported", NO_EVIDENCE, "source_answer_too_long")
+
         source_deadlines = [
             (days, anchor.casefold().rstrip("s"))
             for citation in citations
             for days, anchor in _DEADLINE_ANCHOR.findall(citation.quote)
         ]
-        for days, anchor in _DEADLINE_ANCHOR.findall(answer):
+        for days, anchor in _DEADLINE_ANCHOR.findall(text):
             source_anchors = {
                 source_anchor
                 for source_days, source_anchor in source_deadlines
@@ -343,13 +351,18 @@ class CompanyAnswerService:
             and not any(_STORAGE_LOCATION.search(item.quote) for item in citations)
         ):
             return finish("unsupported", NO_EVIDENCE, "missing_location_evidence")
-        text = answer.strip()
-        for citation in citations:
-            for match in _APPROVAL_CONDITION.finditer(citation.quote):
-                condition = match.group(1).strip()
-                if _normalized(condition) not in _normalized(text):
-                    text = f"{text} {condition.capitalize()} is required."
+        if not requested_parts:
+            for citation in citations:
+                for match in _APPROVAL_CONDITION.finditer(citation.quote):
+                    condition = match.group(1).strip()
+                    if _normalized(condition) not in _normalized(text):
+                        text = f"{text} {condition.capitalize()} is required."
         if status == "partial":
             text = f"{text} {PARTIAL_NOTE}"
-        reason = "accepted_citation_id_repaired" if repaired_citation_id else "accepted"
+        if requested_parts:
+            reason = "accepted_source_worded"
+        elif repaired_citation_id:
+            reason = "accepted_citation_id_repaired"
+        else:
+            reason = "accepted"
         return finish(status, text, reason, tuple(citations))
