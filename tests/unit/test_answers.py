@@ -14,7 +14,7 @@ from nool.generation.answers import (
     UPDATING,
     CompanyAnswerService,
 )
-from nool.generation.evidence import select_answer_passages
+from nool.generation.evidence import select_answer_passages, select_citation_quote
 from nool.generation.ollama import OllamaAnswerModel
 from nool.generation.questions import explicit_question_parts, focused_question
 from nool.retrieval.company import CompanySearchResult, corpus_fingerprint
@@ -111,6 +111,21 @@ def supported(hit: CompanySearchResult, status: str = "answered") -> dict:
             "How should I handle the visitor and report the repair?",
             ("handle the visitor", "report the repair"),
         ),
+        (
+            "An employee is leaving. What should happen to access and the device?",
+            (
+                "An employee is leaving. What should happen to access",
+                "the device",
+            ),
+        ),
+        (
+            "After a client dinner, what details and deadlines matter "
+            "for reimbursement?",
+            (
+                "After a client dinner, what details",
+                "deadlines matter for reimbursement",
+            ),
+        ),
         ("Who needs manager and Finance approval?", ()),
         ("How should I plan leave around holidays?", ()),
     ],
@@ -127,6 +142,36 @@ def test_focused_question_keeps_the_request_after_context() -> None:
         == "what is the expense claim deadline?"
     )
     assert focused_question("How much leave do I get?") == "How much leave do I get?"
+
+
+def test_citation_quote_is_copied_from_the_relevant_source_sentence() -> None:
+    passage = (
+        "The team records an approved request. "
+        "Report a lost device to the security desk within 30 minutes. "
+        "Keep the incident record current."
+    )
+    quote = select_citation_quote(
+        passage,
+        "When do I report a lost device?",
+        "Report it within 30 minutes.",
+    )
+    assert quote == "Report a lost device to the security desk within 30 minutes."
+    pdf_quote = select_citation_quote(
+        "Policy\nReport a lost device within 30 minutes of discovery.",
+        "When must I report a lost device?",
+        "Report it within 30 minutes.",
+    )
+    assert pdf_quote == "Report a lost device within 30 minutes of discovery."
+    tiered = select_citation_quote(
+        "A manager approves the purchase. Finance also approves purchases "
+        "above INR 25,000. A director approves purchases above INR 100,000.",
+        "Who approves a purchase of INR 35,000?",
+        "A manager and Finance approve the purchase.",
+    )
+    assert tiered == (
+        "A manager approves the purchase. "
+        "Finance also approves purchases above INR 25,000."
+    )
 
 
 def test_supported_answer_has_traceable_citation(tmp_path: Path) -> None:
@@ -710,6 +755,17 @@ def test_invalid_citation_is_not_displayed(tmp_path: Path, response: dict) -> No
     assert result.citations == ()
 
 
+def test_internal_evidence_id_is_not_shown_in_answer(tmp_path: Path) -> None:
+    _, store, hit = setup_policy(tmp_path)
+    response = supported(hit)
+    response["answer"] = "Employees receive 20 paid leave days as per E1."
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ModelStub(response)
+    ).answer("How much leave?", "employee_demo")
+    assert result.status == "unsupported"
+    assert result.reason_code == "invalid_response"
+
+
 def test_restricted_evidence_never_reaches_model(tmp_path: Path) -> None:
     _, store, hit = setup_policy(tmp_path, "hr_admin")
     model = ModelStub(supported(hit))
@@ -791,6 +847,7 @@ def test_ollama_request_contains_only_given_evidence(
             captured["payload"] = json.loads(request.data)
             part = supported(hit)
             part["citations"][0]["evidence_id"] = "E1"
+            del part["citations"][0]["quote"]
             request_body = json.loads(captured["payload"]["messages"][1]["content"])
             response = (
                 {"parts": [part, part]} if request_body["requested_parts"] else part
@@ -806,6 +863,8 @@ def test_ollama_request_contains_only_given_evidence(
     assert [item["evidence_id"] for item in request["evidence"]] == ["E1"]
     assert request["requested_parts"] == []
     assert "citations" in captured["payload"]["format"]["required"]
+    citation_schema = captured["payload"]["format"]["properties"]["citations"]
+    assert citation_schema["items"]["required"] == ["evidence_id"]
     response = OllamaAnswerModel().generate(
         "A visitor notices a broken door. How should I handle the visitor "
         "and report the repair?",

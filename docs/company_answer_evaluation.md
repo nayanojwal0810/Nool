@@ -2,9 +2,9 @@
 
 ## What we checked
 
-We ran Qwen3 4B Instruct on the original 45 fictional company documents using local CPU inference. The 162 initial-state cases contain 150 questions with expected sources, seven questions aimed at restricted documents, and five questions the documents cannot answer. Hybrid search supplied up to five permitted documents. The answer path selected relevant passages and checked each citation against current source text. Every case used a 600-second model timeout.
+We ran Qwen3 4B Instruct on the original 45 fictional company documents. The 162 initial-state cases contain 150 questions with expected sources, seven questions aimed at restricted documents, and five questions the documents cannot answer. Hybrid search supplied up to five permitted documents. The answer path selected relevant passages and checked each citation against current source text. Every case used a 600-second model timeout.
 
-The complete predictions are saved locally in `outputs/company_answer_predictions_qwen3_cpu_full.jsonl`. The 50,000-passage search benchmark and company question set were unchanged.
+The complete predictions are saved locally under `outputs/`. The 50,000-passage search benchmark and company question set were unchanged.
 
 ## Results
 

@@ -13,6 +13,7 @@ _CONTEXT_AND_QUESTION = re.compile(
     r"(?:[.!?]|,)\s+(?=(?:what|when|where|which|who|how|why|does|do|should|can)\b)",
     re.IGNORECASE,
 )
+_PAIRED_TOPIC_QUESTION = re.compile(r"^(?:what|which|how)\b", re.IGNORECASE)
 
 
 def explicit_question_parts(question: str) -> tuple[str, ...]:
@@ -26,6 +27,17 @@ def explicit_question_parts(question: str) -> tuple[str, ...]:
     match = _TWO_ACTIONS.search(question)
     if match is not None and len(match.group(2).split()) >= 2:
         return match.group(1).strip(), match.group(2).strip()
+    focus = focused_question(question)
+    if _PAIRED_TOPIC_QUESTION.match(focus) and not focus.casefold().startswith(
+        ("what is ", "what are ")
+    ):
+        separator = focus.casefold().rfind(" and ")
+        if separator > 0:
+            first = focus[:separator].strip()
+            second = focus[separator + 5 :].strip().rstrip("?")
+            if len(first.split()) >= 2 and len(second.split()) >= 2:
+                context = question[: question.rfind(focus)]
+                return (context + first).strip(), second
     return ()
 
 

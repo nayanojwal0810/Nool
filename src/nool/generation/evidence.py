@@ -12,6 +12,11 @@ from nool.retrieval.company import CompanySearchResult
 _STEMMER = Stemmer.Stemmer("english")
 _WORDS = re.compile(r"[a-z][a-z0-9]+")
 _NUMBER = re.compile(r"\b\d+(?:[.,]\d+)?\b")
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n\s*\n")
+_SECTION_PREFIX = re.compile(
+    r"^(?:policy|procedure|responsibilities and follow-up|exceptions|example)\s+",
+    re.IGNORECASE,
+)
 _STOP_WORDS = {
     "a",
     "an",
@@ -49,6 +54,40 @@ def _terms(text: str) -> set[str]:
         word for word in _WORDS.findall(text.casefold()) if word not in _STOP_WORDS
     ]
     return set(_STEMMER.stemWords(words))
+
+
+def select_citation_quote(passage: str, question: str, answer: str) -> str:
+    """Copy a relevant sentence from a cited passage."""
+    sentences = [
+        " ".join(sentence.split())
+        for sentence in _SENTENCE_BOUNDARY.split(passage)
+        if len(sentence.strip()) >= 8
+    ]
+    if not sentences:
+        return " ".join(passage.split())
+    answer_terms = _terms(answer)
+    question_terms = _terms(question)
+    ranked = []
+    sentence_terms = []
+    for index, sentence in enumerate(sentences):
+        terms = _terms(sentence)
+        sentence_terms.append(terms)
+        score = 2 * len(terms & answer_terms) + len(terms & question_terms)
+        ranked.append((score, -index, index))
+    best = max(ranked)[2]
+    neighbors = [index for index in (best - 1, best + 1) if 0 <= index < len(sentences)]
+    if neighbors:
+        added = max(
+            neighbors,
+            key=lambda index: len(
+                (sentence_terms[index] & answer_terms) - sentence_terms[best]
+            ),
+        )
+        new_terms = (sentence_terms[added] & answer_terms) - sentence_terms[best]
+        if new_terms and len((sentences[best] + sentences[added]).split()) <= 60:
+            first, last = sorted((best, added))
+            return _SECTION_PREFIX.sub("", " ".join(sentences[first : last + 1]))
+    return _SECTION_PREFIX.sub("", sentences[best])
 
 
 def select_answer_passages(

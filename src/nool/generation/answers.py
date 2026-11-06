@@ -154,23 +154,18 @@ class CompanyAnswerService:
         requested_parts = explicit_question_parts(question)
         try:
             original = self.search.search(question.strip(), user_id, top_k=top_k)
+            supplemental = []
             if requested_parts:
-                part_hits = [
-                    self.search.search(part, user_id, top_k=1)[0:1]
-                    for part in requested_parts
-                ]
-                evidence = _unique_ranked(
-                    [*part_hits[0], *part_hits[1], *original], top_k
-                )
-            else:
-                focus = focused_question(question)
-                if focus != question.strip():
-                    focused = self.search.search(focus, user_id, top_k=2)
-                    evidence = _unique_ranked(
-                        [*original[:1], *focused, *original[1:]], top_k
-                    )
-                else:
-                    evidence = original
+                for part in requested_parts:
+                    supplemental.extend(self.search.search(part, user_id, top_k=1))
+            focus = focused_question(question)
+            if focus != question.strip():
+                supplemental.extend(self.search.search(focus, user_id, top_k=2))
+            evidence = (
+                _unique_ranked([*original, *supplemental], top_k + 1)
+                if supplemental
+                else original
+            )
         except RuntimeError as exc:
             if "outdated" in str(exc):
                 return finish("unavailable", UPDATING, "stale_index")
@@ -260,6 +255,7 @@ class CompanyAnswerService:
             not isinstance(answer, str)
             or not answer.strip()
             or len(answer) > 800
+            or re.search(r"\bE\d+\b", answer) is not None
             or not isinstance(references, list)
             or not references
             or len(references) > len(evidence) * (2 if requested_parts else 1)

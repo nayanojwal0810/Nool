@@ -1,6 +1,6 @@
 # Nool — Enterprise Knowledge Assistant: Answer Guide
 
-Nool's answer path takes up to five current documents that the selected demo user may access. For a question with two clear requests, it also searches each request so a relevant document is not crowded out by the full question. When a question starts with a situation, it also searches the final question on its own. It chooses the most relevant passage from each document and may include more passages from the top two documents. It sends at most eight passages to a local Qwen model through Ollama. The model returns a separate answer and citation for each clear request. Nool combines the parts only after checking their citations. A supported answer is short and carries source citations with an exact excerpt from each cited passage. A one-character citation ID typo is corrected only when its exact quote uniquely matches a permitted passage. The answer path checks document status, version, and access both before and after the model call, so a change during generation cannot release the old answer.
+Nool's answer path starts with up to five current documents that the selected demo user may access. It searches each clear part of a compound question and, when useful, the final request without its introductory situation. These extra searches can add one document without removing the original results. Nool chooses relevant passages and sends at most nine to Qwen through Ollama. The model selects source IDs for each answer part. Nool checks those IDs and copies citation text from the current, permitted passages. It checks document status, version, and access both before and after the model call, so a change during generation cannot release the old answer.
 
 When the passages do not support the question, Nool responds: “I couldn't verify an answer from the documents available to you. Please check with the relevant team before acting on it.” A partial answer states only the verified part and makes clear that the response is limited to what the documents confirm. The response does not mention restricted documents.
 
@@ -12,7 +12,7 @@ The company index and local SQLite database must match. For an optional local ch
 .\.venv\Scripts\python scripts/answer_company.py "How many annual leave days do I get?" --user employee_demo --offline
 ```
 
-The model endpoint is limited to the local computer. The `--model` option selects a different installed Ollama model. Add `--cpu-only` to keep Ollama inference on the CPU. If the model is unavailable, Nool returns a neutral temporary-error message instead of inventing an answer.
+The model endpoint is limited to the local computer. The `--model` option selects a different installed Ollama model. If the model is unavailable, Nool returns a neutral temporary-error message instead of inventing an answer.
 
 ## Review model outputs
 

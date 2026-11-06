@@ -4,6 +4,7 @@ import json
 from urllib.parse import urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
+from nool.generation.evidence import select_citation_quote
 from nool.generation.questions import explicit_question_parts
 from nool.retrieval.company import CompanySearchResult
 
@@ -32,8 +33,9 @@ its source. Keep the answer under 80 words and each exact quote under 20 words.
 When the question names two items joined by "and", answer both items before
 returning answered. If only one item is supported, return partial.
 Do not guess, use outside knowledge, or mention documents the user cannot see.
-For every supported answer, cite the evidence IDs and copy a short exact quote
-from each cited passage. Each citation must contain evidence_id and quote.
+For every supported answer, cite the evidence IDs. Each citation contains only
+evidence_id; the application copies the displayed quote from that passage.
+Do not put evidence IDs in the answer text.
 For unsupported, use an empty answer and citation list."""
 
 SINGLE_INSTRUCTIONS = """Return one JSON object with status, answer, and
@@ -58,9 +60,8 @@ ANSWER_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "evidence_id": {"type": "string"},
-                    "quote": {"type": "string"},
                 },
-                "required": ["evidence_id", "quote"],
+                "required": ["evidence_id"],
             },
         },
     },
@@ -104,7 +105,7 @@ class OllamaAnswerModel:
     def generate(self, question: str, evidence: list[CompanySearchResult]) -> dict:
         requested_parts = explicit_question_parts(question)
         evidence_ids = {
-            f"E{number}": item.chunk_id for number, item in enumerate(evidence, start=1)
+            f"E{number}": item for number, item in enumerate(evidence, start=1)
         }
         passages = [
             {
@@ -165,13 +166,23 @@ class OllamaAnswerModel:
             else [result]
         )
         if isinstance(outputs, list):
-            for part in outputs:
+            for index, part in enumerate(outputs):
                 if isinstance(part, dict) and isinstance(part.get("citations"), list):
                     for citation in part["citations"]:
                         if isinstance(citation, dict):
                             short_id = citation.get("evidence_id")
                             if isinstance(short_id, str):
-                                citation["evidence_id"] = evidence_ids.get(
-                                    short_id, short_id
-                                )
+                                item = evidence_ids.get(short_id)
+                                if item is not None:
+                                    answer_text = part.get("answer")
+                                    citation["evidence_id"] = item.chunk_id
+                                    citation["quote"] = select_citation_quote(
+                                        item.text,
+                                        requested_parts[index]
+                                        if index < len(requested_parts)
+                                        else question,
+                                        answer_text
+                                        if isinstance(answer_text, str)
+                                        else "",
+                                    )
         return result
