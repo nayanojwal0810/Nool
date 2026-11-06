@@ -18,6 +18,11 @@ the question as far as the policy allows.
 Keep any required approval or limit attached to the fact you state.
 Keep the source's exact amounts, deadlines, actors, and objects. Do not move
 an action to a different date or apply it to a different object.
+When the question gives an amount or date, apply the policy to that value.
+State every requirement that applies, including requirements introduced by
+"also" or "additionally". Leave out tiers that do not apply.
+Check that a cited policy covers the activity in the question. Do not carry a
+rule from one activity to another because they share a word or cost type.
 For a question about where or how to act, use the passage that gives the action
 or channel. Answer directly; citations show the source.
 If a where question asks for a place or system and the evidence gives only a
