@@ -2,30 +2,28 @@
 
 ## What we checked
 
-We ran the local Qwen 2.5 3B model through Nool's answer path on the original 45 fictional company documents. The check used 150 questions with known sources, seven questions aimed at restricted documents, and five questions the documents cannot answer. Hybrid search supplied up to five permitted documents. The answer path also supplied each found document's policy passage when available and checked citations against exact source text.
+We ran Qwen3 4B Instruct on the original 45 fictional company documents using local CPU inference. The 162 initial-state cases contain 150 questions with expected sources, seven questions aimed at restricted documents, and five questions the documents cannot answer. Hybrid search supplied up to five permitted documents. The answer path selected relevant passages and checked each citation against current source text. Every case used a 600-second model timeout.
 
-We saved all 162 responses in `outputs/company_answer_predictions.jsonl`. The run started with a 240-second model timeout and resumed after interruption with a 600-second timeout. The counts below describe this run; a future comparison should use one timeout for every case.
+The complete predictions are saved locally in `outputs/company_answer_predictions_qwen3_cpu_full.jsonl`. The 50,000-passage search benchmark and company question set were unchanged.
 
 ## Results
 
 | Question type | Cases | Cited every expected source |
 |---|---:|---:|
-| Direct | 45 | 36 |
-| Reworded | 40 | 27 |
-| Two-source | 40 | 6 |
-| Near miss | 25 | 17 |
-| Total answerable | 150 | 86 |
+| Direct | 45 | 41 |
+| Reworded | 40 | 34 |
+| Two-source | 40 | 3 |
+| Near miss | 25 | 24 |
+| Total answerable | 150 | 102 |
 
-The model returned 54 answered, 59 partial, 36 unsupported, and 13 unavailable responses across all 162 cases. It refused all five questions with no document answer. It refused four of seven restricted-target questions. On the other three, it gave related information from permitted documents; it did not cite the restricted target documents. Those three responses did not meet the intended refusal behavior.
+Across all 162 cases, Nool returned 113 answers, 18 unsupported responses, and 31 unavailable responses. Of the unavailable responses, 28 were model timeouts: 25 two-source and three reworded questions. Three were invalid model output.
 
-The 13 unavailable responses included 11 two-source questions and two reworded questions. The current output does not record whether each unavailable response came from a timeout, a connection error, or invalid model output.
+Nool refused all five questions without a document answer and six of seven restricted-target questions. In the remaining restricted-target case, it gave an irrelevant answer from a permitted document. It did not cite the restricted target document. The separate permission-change and document-update cases are tested in code, outside this initial-state run.
 
-## What the results mean
+## Interpretation
 
-The [company search evaluation](company_search_evaluation.md) found every expected document for 142 of 150 answerable questions. This answer check is stricter: the model must use and cite those documents in its response. The gap is largest on questions needing two documents. Some clear single-document questions were also refused even when the correct policy passage was available.
+Hybrid search found every expected document for 142 of the 150 answerable questions. The gap between 142 found and 102 cited shows that finding the documents does not yet produce a complete answer. Two-source questions are the largest weakness, including both timeouts and answers that cite only one source.
 
-The citation check confirms that each quoted excerpt appears in a current permitted passage. It does not prove that the full answer follows from that excerpt. We have not assigned a factual-accuracy score to the generated text. The demo users are test identities, not website authentication.
+An earlier Qwen 2.5 3B run cited every expected source in 86 of 150 answerable cases. It used a different passage selector and mixed timeouts, so these runs do not isolate the effect of changing models. Citation coverage also does not prove that every answer is factually correct. A full human review of the answer text remains to be done.
 
-The answer path now chooses passages based on the question and records why an answer was unavailable or refused. We checked passage selection on all 150 answerable cases: it kept the expected documents in all 142 cases where hybrid search found them. It selected 783 passages in total, or 5.2 per question on average, with no more than seven for any question. This check measures source retention, not answer quality.
-
-The full comparison of Qwen3 4B Instruct and Qwen 2.5 3B has not completed. It will use the same 162 cases, passage selector, and timeout for both models, including two-source answers and restricted-target refusals. We will report an improvement only after checking the saved answers. The 50,000-passage search benchmark and question set remain fixed.
+The next answer change should make two-source questions use a bounded amount of evidence and finish within a practical time. It must also reject answers that address a related policy instead of the user's question. We will rerun the same cases after those changes before reporting an improvement.
