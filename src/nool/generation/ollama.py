@@ -25,6 +25,9 @@ For questions with several requested facts, cover each supported fact and cite
 its source. Keep the answer under 80 words and each exact quote under 20 words.
 When the question names two items joined by "and", answer both items before
 returning answered. If only one item is supported, return partial.
+When a question asks for two actions, explain each action in its own sentence.
+Before returning answered, check that the answer covers every requested action
+and that each action has a matching cited passage.
 Do not guess, use outside knowledge, or mention documents the user cannot see.
 For every supported answer, cite the evidence IDs and copy a short exact quote
 from each cited passage. Return one JSON object with status, answer, and
