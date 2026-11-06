@@ -8,7 +8,7 @@ The working code prepares a fixed HotpotQA sample and searches it with BM25, Con
 
 The [Lindenmere Services collection](../data/demo/README.md) adds 45 fictional company documents and 170 prepared question cases. Ingestion reads Markdown, plain text, and text-based PDFs. SQLite stores each document's current version, hash, status, allowed roles, and traceable passages. The company search path combines BM25 and Contriever passage rankings, checks the live role and document record, and blocks search if its index is outdated. The [company search evaluation](company_search_evaluation.md) reports results on the current collection. The [answer path](answer_guide.md) sends approved passages to a local model and checks its cited excerpts. The [answer evaluation](company_answer_evaluation.md) reports its current citation and refusal results.
 
-HotpotQA is used for search evaluation. It does not represent company documents or test access rules. Nool does not yet have a working question-to-answer website.
+HotpotQA is used for search evaluation. It does not represent company documents or test access rules. Nool has a Streamlit question-and-answer website with sign-in and source display. Hosting is pending.
 
 ## Intended application
 

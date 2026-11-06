@@ -8,7 +8,7 @@ Nool's main search combines BM25, which matches words, and Contriever, which mat
 
 The application will use Python, a Streamlit website, SQLite for document and evidence records, and Qwen3 4B Instruct through Ollama for answers.
 
-Search and document ingestion are working now. The [fictional company collection](data/demo/README.md) has 45 documents and 170 prepared question cases, including 150 source-finding questions. Company hybrid search checks current document versions and demo user roles before returning passages. The [company search evaluation](docs/company_search_evaluation.md) reports measured results. A local [answer path](docs/answer_guide.md) checks evidence and citations. The [answer evaluation](docs/company_answer_evaluation.md) shows that two-source answers and some refusals still need work. Evidence memory and the website are still in development.
+Search and document ingestion are working now. The [fictional company collection](data/demo/README.md) has 45 documents and 170 prepared question cases, including 150 source-finding questions. Company hybrid search checks current document versions and demo user roles before returning passages. The [company search evaluation](docs/company_search_evaluation.md) reports measured results. The [answer path](docs/answer_guide.md) checks evidence and citations. The [answer evaluation](docs/company_answer_evaluation.md) shows that two-source answers and some refusals still need work. The Streamlit website is built but not yet hosted. Evidence memory remains in development.
 
 ## Retrieval results
 
@@ -34,7 +34,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m pytest
 ```
 
-Contriever search also needs the dense dependencies and a local copy of the passage embeddings. The [embedding guide](docs/embedding_guide.md) explains how to prepare them. Large data files, model weights, and indexes are excluded from Git.
+Contriever search also needs the dense dependencies and a local copy of the passage embeddings. The [embedding guide](docs/embedding_guide.md) explains how to prepare them. Large benchmark data, model weights, and indexes are excluded from Git. The small company search index is included for the website.
 
 ## Project guides
 

@@ -62,7 +62,8 @@ models/
 *.npy
 *.npz
 embeddings/
-indexes/
+indexes/*
+!indexes/company_search_artifact.zip
 
 # SQLite runtime databases
 *.sqlite
@@ -85,6 +86,7 @@ experiments/
 .env
 .env.*
 !.env.example
+.streamlit/secrets.toml
 
 # Internal blueprints and planning documents
 .internal/

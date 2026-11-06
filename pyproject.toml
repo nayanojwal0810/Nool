@@ -29,6 +29,9 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
 ]
+web = [
+    "streamlit==1.55.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
