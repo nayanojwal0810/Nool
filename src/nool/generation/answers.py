@@ -66,6 +66,16 @@ _APPROVAL_CONDITION = re.compile(
     r"\b(?:with|subject to)\s+([a-z][a-z -]{0,40}?\bapproval)\b",
     re.IGNORECASE,
 )
+_STORAGE_ACTION = re.compile(r"\b(?:stor\w*|sav\w*|record\w*)\b", re.IGNORECASE)
+_STORAGE_LOCATION = re.compile(
+    r"\b(?:in|on|at|within|through|to)\s+"
+    r"(?:the|a|an)?\s*(?:[a-z-]+\s+){0,3}"
+    r"(?:system|portal|folder|drive|case|file|repository|database|vault|cabinet)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_PARTS = re.compile(
+    r"\b(?:which|what|how)\b[^.!?]{0,100}\band\b", re.IGNORECASE
+)
 
 
 class CompanyAnswerService:
@@ -235,6 +245,20 @@ class CompanyAnswerService:
                     quote.strip(),
                 )
             )
+
+        if (
+            question.casefold().lstrip().startswith("where")
+            and _STORAGE_ACTION.search(question)
+            and not any(_STORAGE_LOCATION.search(item.quote) for item in citations)
+        ):
+            return finish("unsupported", NO_EVIDENCE, "missing_location_evidence")
+        if (
+            status == "answered"
+            and _EXPLICIT_PARTS.search(question)
+            and len({item.document_id for item in citations}) == 1
+            and len({item.document_id for item in evidence}) > 1
+        ):
+            status = "partial"
 
         text = answer.strip()
         for citation in citations:

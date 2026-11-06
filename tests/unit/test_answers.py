@@ -276,6 +276,87 @@ def test_reporting_question_selects_the_action_passage(tmp_path: Path) -> None:
     assert result.citations[0].section == "Procedure"
 
 
+def test_storage_question_needs_a_cited_destination(tmp_path: Path) -> None:
+    source = tmp_path / "incident.md"
+    source.write_text(
+        "# Incident Guide\n\n## Policy\n\n"
+        "Preserve messages until the response team advises otherwise.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="IT-005",
+        title="Incident Guide",
+        owner="IT",
+        allowed_roles=["employee"],
+    )
+    chunk = store.current_chunks("IT-005")[1]
+    hit = CompanySearchResult(
+        "IT-005",
+        "Incident Guide",
+        chunk.chunk_id,
+        chunk.section,
+        chunk.page_number,
+        chunk.version,
+        chunk.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+    response = {
+        "status": "answered",
+        "answer": "Preserve messages until advised otherwise.",
+        "citations": [
+            {
+                "evidence_id": chunk.chunk_id,
+                "quote": "Preserve messages until the response team advises otherwise.",
+            }
+        ],
+    }
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ModelStub(response)
+    ).answer("Where should investigation evidence be stored?", "employee_demo")
+    assert result.status == "unsupported"
+    assert result.reason_code == "missing_location_evidence"
+
+
+def test_explicit_two_part_question_needs_more_than_one_source(
+    tmp_path: Path,
+) -> None:
+    _, store, leave = setup_policy(tmp_path)
+    source = tmp_path / "holiday.md"
+    source.write_text(
+        "# Holiday Calendar\n\n## Policy\n\nUse the calendar for your location.",
+        encoding="utf-8",
+    )
+    store.ingest(
+        source,
+        document_id="PEO-003",
+        title="Holiday Calendar",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunk = store.current_chunks("PEO-003")[1]
+    holiday = CompanySearchResult(
+        "PEO-003",
+        "Holiday Calendar",
+        chunk.chunk_id,
+        chunk.section,
+        chunk.page_number,
+        chunk.version,
+        chunk.text,
+        0.9,
+        2,
+        ("contriever",),
+    )
+    result = CompanyAnswerService(
+        SearchStub(store, [leave, holiday]), store, ModelStub(supported(leave))
+    ).answer("Which leave rule and holiday calendar apply?", "employee_demo")
+    assert result.status == "partial"
+    assert result.citations[0].document_id == "PEO-001"
+
+
 def test_partial_and_unsupported_answers_use_professional_language(
     tmp_path: Path,
 ) -> None:

@@ -21,6 +21,8 @@ If a where question asks for a place or system and the evidence gives only a
 time or action, return unsupported.
 For questions with several requested facts, cover each supported fact and cite
 its source. Keep the answer under 80 words and each exact quote under 20 words.
+When the question names two items joined by "and", answer both items before
+returning answered. If only one item is supported, return partial.
 Do not guess, use outside knowledge, or mention documents the user cannot see.
 For every supported answer, cite the evidence IDs and copy a short exact quote
 from each cited passage. Return one JSON object with status, answer, and
