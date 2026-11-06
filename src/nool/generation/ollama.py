@@ -17,6 +17,10 @@ the question as far as the policy allows.
 Keep any required approval or limit attached to the fact you state.
 For a question about where or how to act, use the passage that gives the action
 or channel. Answer directly; citations show the source.
+If a where question asks for a place or system and the evidence gives only a
+time or action, return unsupported.
+For questions with several requested facts, cover each supported fact and cite
+its source. Keep the answer under 80 words and each exact quote under 20 words.
 Do not guess, use outside knowledge, or mention documents the user cannot see.
 For every supported answer, cite the evidence IDs and copy a short exact quote
 from each cited passage. Return one JSON object with status, answer, and
@@ -77,7 +81,7 @@ class OllamaAnswerModel:
             }
             for item in evidence
         ]
-        options = {"temperature": 0, "num_predict": 350}
+        options = {"temperature": 0, "num_predict": 220}
         if self.cpu_only:
             options["num_gpu"] = 0
         payload = {

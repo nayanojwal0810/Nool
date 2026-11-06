@@ -41,6 +41,9 @@ def main() -> None:
     parser.add_argument("--cpu-only", action="store_true")
     parser.add_argument("--timeout", type=int, default=240)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--case-ids", help="Comma-separated case IDs for a focused check"
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
@@ -77,6 +80,15 @@ def main() -> None:
     with resolve_path(args.questions).open(encoding="utf-8") as stream:
         cases = [json.loads(line) for line in stream]
     selected = [case for case in cases if case["scenario"] in INITIAL_SCENARIOS]
+    if args.case_ids:
+        requested = [case_id.strip() for case_id in args.case_ids.split(",")]
+        if len(set(requested)) != len(requested) or not all(requested):
+            parser.error("--case-ids must contain distinct, nonempty IDs")
+        by_id = {case["case_id"]: case for case in selected}
+        unknown = set(requested) - by_id.keys()
+        if unknown:
+            parser.error(f"Unknown case IDs: {', '.join(sorted(unknown))}")
+        selected = [by_id[case_id] for case_id in requested]
     if args.limit:
         selected = selected[: args.limit]
 
