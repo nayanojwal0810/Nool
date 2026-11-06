@@ -763,7 +763,52 @@ def test_internal_evidence_id_is_not_shown_in_answer(tmp_path: Path) -> None:
         SearchStub(store, [hit]), store, ModelStub(response)
     ).answer("How much leave?", "employee_demo")
     assert result.status == "unsupported"
-    assert result.reason_code == "invalid_response"
+    assert result.reason_code == "internal_evidence_id"
+
+
+def test_deadline_anchor_must_match_the_cited_policy(tmp_path: Path) -> None:
+    source = tmp_path / "expense.md"
+    source.write_text(
+        "# Expense Policy\n\n## Rule\n\n"
+        "Submit a claim within 30 calendar days of the purchase.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="FIN-001",
+        title="Expense Policy",
+        owner="Finance",
+        allowed_roles=["employee"],
+    )
+    chunk = store.current_chunks("FIN-001")[1]
+    hit = CompanySearchResult(
+        "FIN-001",
+        "Expense Policy",
+        chunk.chunk_id,
+        chunk.section,
+        chunk.page_number,
+        chunk.version,
+        chunk.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+    response = {
+        "status": "answered",
+        "answer": "Submit the claim within 30 calendar days from the event date.",
+        "citations": [
+            {
+                "evidence_id": hit.chunk_id,
+                "quote": "Submit a claim within 30 calendar days of the purchase.",
+            }
+        ],
+    }
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ModelStub(response)
+    ).answer("When is an expense claim due?", "employee_demo")
+    assert result.status == "unsupported"
+    assert result.reason_code == "deadline_anchor_mismatch"
 
 
 def test_restricted_evidence_never_reaches_model(tmp_path: Path) -> None:

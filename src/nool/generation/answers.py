@@ -88,6 +88,11 @@ _STORAGE_LOCATION = re.compile(
     r"(?:system|portal|folder|drive|case|file|repository|database|vault|cabinet)\b",
     re.IGNORECASE,
 )
+_DEADLINE_ANCHOR = re.compile(
+    r"\b(\d+)\s+(?:(?:business|calendar)\s+)?days?\s+"
+    r"(?:of|from|after|before)\s+(?:(?:the|a|an)\s+)?([a-z-]+)",
+    re.IGNORECASE,
+)
 
 
 class CompanyAnswerService:
@@ -206,19 +211,21 @@ class CompanyAnswerService:
         if requested_parts:
             parts = response.get("parts")
             if not isinstance(parts, list) or len(parts) != len(requested_parts):
-                return finish("unsupported", NO_EVIDENCE, "invalid_response")
+                return finish("unsupported", NO_EVIDENCE, "invalid_part_count")
             part_answers = []
             part_references = []
             part_statuses = []
             for part in parts:
                 if not isinstance(part, dict):
-                    return finish("unsupported", NO_EVIDENCE, "invalid_response")
+                    return finish("unsupported", NO_EVIDENCE, "invalid_part")
                 part_status = part.get("status")
                 part_answer = part.get("answer")
                 references = part.get("citations")
                 if part_status == "unsupported":
                     if part_answer or references:
-                        return finish("unsupported", NO_EVIDENCE, "invalid_response")
+                        return finish(
+                            "unsupported", NO_EVIDENCE, "invalid_unsupported_part"
+                        )
                 elif (
                     part_status not in {"answered", "partial"}
                     or not isinstance(part_answer, str)
@@ -226,7 +233,7 @@ class CompanyAnswerService:
                     or not isinstance(references, list)
                     or not references
                 ):
-                    return finish("unsupported", NO_EVIDENCE, "invalid_response")
+                    return finish("unsupported", NO_EVIDENCE, "invalid_part")
                 else:
                     part_answers.append(part_answer.strip().rstrip(". "))
                     part_references.extend(references)
@@ -255,12 +262,13 @@ class CompanyAnswerService:
             not isinstance(answer, str)
             or not answer.strip()
             or len(answer) > 800
-            or re.search(r"\bE\d+\b", answer) is not None
             or not isinstance(references, list)
             or not references
             or len(references) > len(evidence) * (2 if requested_parts else 1)
         ):
             return finish("unsupported", NO_EVIDENCE, "invalid_response")
+        if re.search(r"\bE\d+\b", answer) is not None:
+            return finish("unsupported", NO_EVIDENCE, "internal_evidence_id")
 
         by_id = {item.chunk_id: item for item in evidence}
         citations = []
@@ -314,6 +322,20 @@ class CompanyAnswerService:
                     quote.strip(),
                 )
             )
+
+        source_deadlines = [
+            (days, anchor.casefold().rstrip("s"))
+            for citation in citations
+            for days, anchor in _DEADLINE_ANCHOR.findall(citation.quote)
+        ]
+        for days, anchor in _DEADLINE_ANCHOR.findall(answer):
+            source_anchors = {
+                source_anchor
+                for source_days, source_anchor in source_deadlines
+                if source_days == days
+            }
+            if source_anchors and anchor.casefold().rstrip("s") not in source_anchors:
+                return finish("unsupported", NO_EVIDENCE, "deadline_anchor_mismatch")
 
         if (
             question.casefold().lstrip().startswith("where")

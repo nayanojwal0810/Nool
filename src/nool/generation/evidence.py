@@ -13,6 +13,10 @@ _STEMMER = Stemmer.Stemmer("english")
 _WORDS = re.compile(r"[a-z][a-z0-9]+")
 _NUMBER = re.compile(r"\b\d+(?:[.,]\d+)?\b")
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n\s*\n")
+_SECTION_LINE = re.compile(
+    r"(?im)^[ \t]*(?:purpose and scope|policy|procedure|"
+    r"responsibilities and follow-up|example|exceptions)[ \t]*$"
+)
 _SECTION_PREFIX = re.compile(
     r"^(?:policy|procedure|responsibilities and follow-up|exceptions|example)\s+",
     re.IGNORECASE,
@@ -58,6 +62,7 @@ def _terms(text: str) -> set[str]:
 
 def select_citation_quote(passage: str, question: str, answer: str) -> str:
     """Copy a relevant sentence from a cited passage."""
+    passage = _SECTION_LINE.sub("\n\n", passage)
     sentences = [
         " ".join(sentence.split())
         for sentence in _SENTENCE_BOUNDARY.split(passage)
