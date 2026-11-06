@@ -107,18 +107,38 @@ def select_answer_passages(
         if best is None:
             continue
         chosen = [best]
-        if (
-            document.rank <= 2
-            and document.score >= ranked_documents[0].score * 0.8
-            and len(ordered) > 1
-        ):
-            second = ordered[1]
-            if (
-                second.chunk_id != best.chunk_id
-                and score(second) >= max(2.0, score(best) * 0.8)
-                and second.section not in {"Introduction", "Purpose and scope"}
-            ):
+        if document.rank <= 2:
+            second = next(
+                (
+                    chunk
+                    for chunk in ordered
+                    if chunk.chunk_id != best.chunk_id
+                    and chunk.section
+                    not in {"Introduction", "Purpose and scope", "Example"}
+                    and score(chunk) > 0
+                ),
+                None,
+            )
+            if second is not None:
                 chosen.append(second)
+        if document.rank == 1:
+            question_numbers = set(_NUMBER.findall(question))
+            third = next(
+                (
+                    chunk
+                    for chunk in ordered
+                    if chunk.chunk_id not in {item.chunk_id for item in chosen}
+                    and chunk.section not in {"Introduction", "Purpose and scope"}
+                    and (
+                        chunk.section != "Example"
+                        or bool(question_numbers & set(_NUMBER.findall(chunk.text)))
+                    )
+                    and score(chunk) > 0
+                ),
+                None,
+            )
+            if third is not None:
+                chosen.append(third)
         for chunk in chosen:
             selected.append(
                 CompanySearchResult(

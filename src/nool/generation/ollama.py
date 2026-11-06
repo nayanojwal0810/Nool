@@ -15,6 +15,8 @@ When a policy applies to a stated group, answer with that condition instead of
 assuming the user's membership. Use answered when that condition fully answers
 the question as far as the policy allows.
 Keep any required approval or limit attached to the fact you state.
+Keep the source's exact amounts, deadlines, actors, and objects. Do not move
+an action to a different date or apply it to a different object.
 For a question about where or how to act, use the passage that gives the action
 or channel. Answer directly; citations show the source.
 If a where question asks for a place or system and the evidence gives only a
@@ -72,16 +74,19 @@ class OllamaAnswerModel:
         self.cpu_only = cpu_only
 
     def generate(self, question: str, evidence: list[CompanySearchResult]) -> dict:
+        evidence_ids = {
+            f"E{number}": item.chunk_id for number, item in enumerate(evidence, start=1)
+        }
         passages = [
             {
-                "evidence_id": item.chunk_id,
+                "evidence_id": f"E{number}",
                 "title": item.title,
                 "document_id": item.document_id,
                 "section": item.section,
                 "page_number": item.page_number,
                 "text": item.text,
             }
-            for item in evidence
+            for number, item in enumerate(evidence, start=1)
         ]
         options = {"temperature": 0, "num_predict": 220}
         if self.cpu_only:
@@ -112,6 +117,13 @@ class OllamaAnswerModel:
             body = json.load(response)
         try:
             content = body["message"]["content"]
-            return json.loads(content)
+            result = json.loads(content)
         except (KeyError, TypeError) as exc:
             raise ValueError("Ollama returned an invalid response") from exc
+        if isinstance(result, dict) and isinstance(result.get("citations"), list):
+            for citation in result["citations"]:
+                if isinstance(citation, dict):
+                    short_id = citation.get("evidence_id")
+                    if isinstance(short_id, str):
+                        citation["evidence_id"] = evidence_ids.get(short_id, short_id)
+        return result

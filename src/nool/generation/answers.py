@@ -73,9 +73,6 @@ _STORAGE_LOCATION = re.compile(
     r"(?:system|portal|folder|drive|case|file|repository|database|vault|cabinet)\b",
     re.IGNORECASE,
 )
-_EXPLICIT_PARTS = re.compile(
-    r"\b(?:which|what|how)\b[^.!?]{0,100}\band\b", re.IGNORECASE
-)
 
 
 class CompanyAnswerService:
@@ -252,14 +249,6 @@ class CompanyAnswerService:
             and not any(_STORAGE_LOCATION.search(item.quote) for item in citations)
         ):
             return finish("unsupported", NO_EVIDENCE, "missing_location_evidence")
-        if (
-            status == "answered"
-            and _EXPLICIT_PARTS.search(question)
-            and len({item.document_id for item in citations}) == 1
-            and len({item.document_id for item in evidence}) > 1
-        ):
-            status = "partial"
-
         text = answer.strip()
         for citation in citations:
             for match in _APPROVAL_CONDITION.finditer(citation.quote):

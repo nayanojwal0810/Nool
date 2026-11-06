@@ -219,6 +219,114 @@ def test_policy_passage_is_available_when_search_finds_another_section(
     assert result.citations[0].section == "Policy"
 
 
+def test_exception_passage_is_available_beside_the_policy(tmp_path: Path) -> None:
+    source = tmp_path / "travel.md"
+    source.write_text(
+        "# Travel Booking\n\n## Policy\n\n"
+        "Request travel seven calendar days before departure.\n\n"
+        "## Exceptions\n\nUrgent travel can use shorter notice with "
+        "written manager and Finance approval.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="FIN-002",
+        title="Travel Booking",
+        owner="Finance",
+        allowed_roles=["employee"],
+    )
+    chunks = {chunk.section: chunk for chunk in store.current_chunks("FIN-002")}
+    policy = chunks["Policy"]
+    exception = chunks["Exceptions"]
+    hit = CompanySearchResult(
+        "FIN-002",
+        "Travel Booking",
+        policy.chunk_id,
+        policy.section,
+        policy.page_number,
+        policy.version,
+        policy.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+
+    class ExceptionModel:
+        def generate(self, question: str, evidence: list) -> dict:
+            assert exception.chunk_id in {item.chunk_id for item in evidence}
+            return {
+                "status": "answered",
+                "answer": "Urgent travel needs written manager and Finance approval.",
+                "citations": [
+                    {
+                        "evidence_id": exception.chunk_id,
+                        "quote": exception.text,
+                    }
+                ],
+            }
+
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ExceptionModel()
+    ).answer("What approval allows shorter travel notice?", "employee_demo")
+    assert result.status == "answered"
+    assert result.citations[0].section == "Exceptions"
+
+
+def test_example_does_not_displace_exception_or_policy(tmp_path: Path) -> None:
+    source = tmp_path / "visitors.md"
+    source.write_text(
+        "# Visitor Access\n\n## Policy\n\nRegister visitors before arrival.\n\n"
+        "## Example\n\nA customer visits reception tomorrow.\n\n"
+        "## Exceptions\n\nFor an unplanned visitor, reception waits for host approval.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="OPS-004",
+        title="Visitor Access",
+        owner="Operations",
+        allowed_roles=["employee"],
+    )
+    chunks = {chunk.section: chunk for chunk in store.current_chunks("OPS-004")}
+    policy = chunks["Policy"]
+    hit = CompanySearchResult(
+        "OPS-004",
+        "Visitor Access",
+        policy.chunk_id,
+        policy.section,
+        policy.page_number,
+        policy.version,
+        policy.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+
+    class ExceptionModel:
+        def generate(self, question: str, evidence: list) -> dict:
+            assert chunks["Exceptions"].chunk_id in {item.chunk_id for item in evidence}
+            assert chunks["Example"].chunk_id not in {
+                item.chunk_id for item in evidence
+            }
+            return {
+                "status": "answered",
+                "answer": "Reception waits for host approval.",
+                "citations": [
+                    {
+                        "evidence_id": chunks["Exceptions"].chunk_id,
+                        "quote": "reception waits for host approval",
+                    }
+                ],
+            }
+
+    result = CompanyAnswerService(
+        SearchStub(store, [hit]), store, ExceptionModel()
+    ).answer("Can an unplanned visitor enter reception?", "employee_demo")
+    assert result.status == "answered"
+
+
 def test_reporting_question_selects_the_action_passage(tmp_path: Path) -> None:
     source = tmp_path / "conduct.md"
     source.write_text(
@@ -321,7 +429,7 @@ def test_storage_question_needs_a_cited_destination(tmp_path: Path) -> None:
     assert result.reason_code == "missing_location_evidence"
 
 
-def test_explicit_two_part_question_needs_more_than_one_source(
+def test_one_source_can_answer_two_parts_when_it_contains_both_facts(
     tmp_path: Path,
 ) -> None:
     _, store, leave = setup_policy(tmp_path)
@@ -352,8 +460,8 @@ def test_explicit_two_part_question_needs_more_than_one_source(
     )
     result = CompanyAnswerService(
         SearchStub(store, [leave, holiday]), store, ModelStub(supported(leave))
-    ).answer("Which leave rule and holiday calendar apply?", "employee_demo")
-    assert result.status == "partial"
+    ).answer("Which employees receive leave and how many days?", "employee_demo")
+    assert result.status == "answered"
     assert result.citations[0].document_id == "PEO-001"
 
 
@@ -487,17 +595,17 @@ def test_ollama_request_contains_only_given_evidence(
     class Opener:
         def open(self, request, timeout):
             captured["payload"] = json.loads(request.data)
+            response = supported(hit)
+            response["citations"][0]["evidence_id"] = "E1"
             return io.BytesIO(
-                json.dumps(
-                    {"message": {"content": json.dumps(supported(hit))}}
-                ).encode()
+                json.dumps({"message": {"content": json.dumps(response)}}).encode()
             )
 
     monkeypatch.setattr("nool.generation.ollama.build_opener", lambda proxy: Opener())
     response = OllamaAnswerModel().generate("How much leave?", [hit])
     assert response == supported(hit)
     request = json.loads(captured["payload"]["messages"][1]["content"])
-    assert [item["evidence_id"] for item in request["evidence"]] == [hit.chunk_id]
+    assert [item["evidence_id"] for item in request["evidence"]] == ["E1"]
     assert "citations" in captured["payload"]["format"]["required"]
     OllamaAnswerModel(cpu_only=True).generate("How much leave?", [hit])
     assert captured["payload"]["options"]["num_gpu"] == 0
