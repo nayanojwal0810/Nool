@@ -7,6 +7,7 @@ from collections import Counter
 import Stemmer
 
 from nool.data.documents import DocumentStore
+from nool.generation.questions import focused_question
 from nool.retrieval.company import CompanySearchResult
 
 _STEMMER = Stemmer.Stemmer("english")
@@ -59,6 +60,25 @@ def _terms(text: str) -> set[str]:
         word for word in _WORDS.findall(text.casefold()) if word not in _STOP_WORDS
     ]
     return set(_STEMMER.stemWords(words))
+
+
+def _matching_terms(question: set[str], passage: set[str]) -> set[str]:
+    matches = question & passage
+    for term in question - matches:
+        if any(
+            len(term) >= 5
+            and len(word) >= 5
+            and term[:4] == word[:4]
+            and 4 / min(len(term), len(word)) >= 0.7
+            for word in passage
+        ):
+            matches.add(term)
+    return matches
+
+
+def quote_matches_question(question: str, quotes: list[str]) -> bool:
+    """Require a cited excerpt to share at least one meaningful question term."""
+    return bool(_matching_terms(_terms(question), _terms(" ".join(quotes))))
 
 
 def select_citation_quote(passage: str, question: str, answer: str) -> str:
@@ -121,13 +141,16 @@ def select_answer_passages(
         term for terms in passage_terms.values() for term in terms & question_terms
     )
     count = len(candidates)
-    question_lower = question.casefold().strip()
+    question_lower = focused_question(question).casefold()
     asks_for_number = question_lower.startswith(("how many", "how much", "how long"))
     asks_for_time = question_lower.startswith(("when", "by when"))
-    asks_for_action = question_lower.startswith(("where", "how do", "how can"))
+    asks_for_action = question_lower.startswith(("where", "how do", "how can")) or (
+        question_lower.startswith(("what", "which", "how"))
+        and re.search(r"\bshould (?:i|we)\b", question_lower) is not None
+    )
 
     def score(chunk) -> float:
-        overlap = question_terms & passage_terms[chunk.chunk_id]
+        overlap = _matching_terms(question_terms, passage_terms[chunk.chunk_id])
         value = sum(
             math.log((count + 1) / (frequency[term] + 1)) + 1 for term in overlap
         )
@@ -161,6 +184,17 @@ def select_answer_passages(
             continue
         chosen = [best]
         if document.rank <= 2:
+            action_procedure = next(
+                (
+                    chunk
+                    for chunk in ordered
+                    if asks_for_action
+                    and chunk.section == "Procedure"
+                    and chunk.chunk_id != best.chunk_id
+                    and score(chunk) > 0
+                ),
+                None,
+            )
             substantive = (
                 chunk
                 for chunk in [fallback, *ordered]
@@ -170,9 +204,11 @@ def select_answer_passages(
                 not in {"Introduction", "Purpose and scope", "Example"}
                 and score(chunk) > 0
             )
-            second = next(substantive, None)
+            second = action_procedure or next(substantive, None)
             if second is not None:
                 chosen.append(second)
+            if action_procedure is not None and document.rank == 2:
+                chosen = [action_procedure, best]
         if document.rank == 1:
             question_numbers = set(_NUMBER.findall(question))
             third = next(
@@ -191,6 +227,19 @@ def select_answer_passages(
             )
             if third is not None:
                 chosen.append(third)
+            if question_numbers:
+                exception = next(
+                    (
+                        chunk
+                        for chunk in ordered
+                        if chunk.section == "Exceptions"
+                        and chunk.chunk_id not in {item.chunk_id for item in chosen}
+                        and score(chunk) > 0
+                    ),
+                    None,
+                )
+                if exception is not None:
+                    chosen.append(exception)
         for chunk in chosen:
             selected.append(
                 CompanySearchResult(

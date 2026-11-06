@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Protocol
 
 from nool.data.documents import DocumentStore
-from nool.generation.evidence import select_answer_passages
+from nool.generation.evidence import quote_matches_question, select_answer_passages
 from nool.generation.questions import explicit_question_parts, focused_question
 from nool.retrieval.company import (
     DEMO_USERS,
@@ -232,6 +232,17 @@ class CompanyAnswerService:
                     or not references
                 ):
                     return finish("unsupported", NO_EVIDENCE, "invalid_part")
+                quotes = [
+                    reference.get("quote", "")
+                    for reference in references
+                    if isinstance(reference, dict)
+                    and isinstance(reference.get("quote"), str)
+                ]
+                if not quote_matches_question(
+                    requested_parts[len(part_statuses)], quotes
+                ):
+                    part_statuses.append("unsupported")
+                    continue
                 part_answers.append(part_answer.strip().rstrip(". "))
                 part_references.extend(references)
                 part_statuses.append(part_status)

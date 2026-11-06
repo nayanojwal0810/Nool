@@ -14,7 +14,11 @@ from nool.generation.answers import (
     UPDATING,
     CompanyAnswerService,
 )
-from nool.generation.evidence import select_answer_passages, select_citation_quote
+from nool.generation.evidence import (
+    quote_matches_question,
+    select_answer_passages,
+    select_citation_quote,
+)
 from nool.generation.ollama import OllamaAnswerModel
 from nool.generation.questions import explicit_question_parts, focused_question
 from nool.retrieval.company import CompanySearchResult, corpus_fingerprint
@@ -397,6 +401,81 @@ def test_retrieved_procedure_is_kept_for_a_second_ranked_document(
     assert procedure.chunk_id in {item.chunk_id for item in selected}
 
 
+def test_action_question_keeps_notification_procedure(tmp_path: Path) -> None:
+    source = tmp_path / "sick.md"
+    source.write_text(
+        "# Sick Leave\n\n## Policy\n\nEmployees may take ten sick days.\n\n"
+        "## Procedure\n\nNotify the line manager before the normal start time.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="PEO-002",
+        title="Sick Leave",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunks = {chunk.section: chunk for chunk in store.current_chunks("PEO-002")}
+    introduction = chunks["Introduction"]
+    hit = CompanySearchResult(
+        "PEO-002",
+        "Sick Leave",
+        introduction.chunk_id,
+        introduction.section,
+        introduction.page_number,
+        introduction.version,
+        introduction.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+    question = "I am sick today. What sick-leave notice should I give?"
+    selected = select_answer_passages(question, [hit], store)
+    assert chunks["Procedure"].chunk_id in {item.chunk_id for item in selected}
+    assert quote_matches_question(
+        question, ["Notify the line manager before the normal start time."]
+    )
+
+
+def test_amount_question_keeps_applicable_exception(tmp_path: Path) -> None:
+    source = tmp_path / "learning.md"
+    source.write_text(
+        "# Learning Budget\n\n## Policy\n\nThe learning allowance is INR 20,000.\n\n"
+        "## Procedure\n\nSend the course description to the manager.\n\n"
+        "## Responsibilities and follow-up\n\n"
+        "Approval must happen before enrollment.\n\n"
+        "## Exceptions\n\nA course above the allowance also needs Finance approval.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="PEO-008",
+        title="Learning Budget",
+        owner="People",
+        allowed_roles=["employee"],
+    )
+    chunks = {chunk.section: chunk for chunk in store.current_chunks("PEO-008")}
+    policy = chunks["Policy"]
+    hit = CompanySearchResult(
+        "PEO-008",
+        "Learning Budget",
+        policy.chunk_id,
+        policy.section,
+        policy.page_number,
+        policy.version,
+        policy.text,
+        1.0,
+        1,
+        ("bm25",),
+    )
+    selected = select_answer_passages(
+        "What approval applies to a course costing INR 24,000?", [hit], store
+    )
+    assert chunks["Exceptions"].chunk_id in {item.chunk_id for item in selected}
+
+
 def test_example_does_not_displace_exception_or_policy(tmp_path: Path) -> None:
     source = tmp_path / "visitors.md"
     source.write_text(
@@ -595,7 +674,8 @@ def test_one_source_can_answer_two_parts_when_it_contains_both_facts(
         store,
         ModelStub({"parts": [supported(leave), bad_second]}),
     ).answer("Which employees receive leave and how many days?", "employee_demo")
-    assert rejected.reason_code == "invalid_citation"
+    assert rejected.status == "partial"
+    assert "Invented leave rule" not in rejected.text
 
 
 def test_two_parts_require_valid_evidence_from_each_document(tmp_path: Path) -> None:
@@ -660,6 +740,11 @@ def test_two_parts_require_valid_evidence_from_each_document(tmp_path: Path) -> 
     assert "1 December" in source_worded.text
     assert "2 January" not in source_worded.text
     assert "E2" not in source_worded.text
+    mismatched = CompanyAnswerService(
+        search, store, ModelStub({"parts": [holiday_part, holiday_part]})
+    ).answer(question, "employee_demo")
+    assert mismatched.status == "partial"
+    assert {item.document_id for item in mismatched.citations} == {"PEO-003"}
 
     invalid_part = {
         **holiday_part,
@@ -668,9 +753,9 @@ def test_two_parts_require_valid_evidence_from_each_document(tmp_path: Path) -> 
     invalid = CompanyAnswerService(
         search, store, ModelStub({"parts": [supported(leave), invalid_part]})
     ).answer(question, "employee_demo")
-    assert invalid.status == "unsupported"
-    assert invalid.reason_code == "invalid_citation"
-    assert invalid.citations == ()
+    assert invalid.status == "partial"
+    assert "Invented date" not in invalid.text
+    assert {item.document_id for item in invalid.citations} == {"PEO-001"}
 
 
 def test_focused_search_recovers_a_document_missed_by_context_search(
