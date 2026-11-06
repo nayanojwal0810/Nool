@@ -150,7 +150,7 @@ def main() -> None:
             }
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
             stream.flush()
-            if number % 10 == 0 or number == len(selected):
+            if len(selected) <= 10 or number % 10 == 0 or number == len(selected):
                 print(f"Completed {number}/{len(selected)} cases.", flush=True)
     with output.open(encoding="utf-8") as stream:
         records = [json.loads(line) for line in stream]
