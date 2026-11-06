@@ -108,17 +108,16 @@ def select_answer_passages(
             continue
         chosen = [best]
         if document.rank <= 2:
-            second = next(
-                (
-                    chunk
-                    for chunk in ordered
-                    if chunk.chunk_id != best.chunk_id
-                    and chunk.section
-                    not in {"Introduction", "Purpose and scope", "Example"}
-                    and score(chunk) > 0
-                ),
-                None,
+            substantive = (
+                chunk
+                for chunk in [fallback, *ordered]
+                if chunk is not None
+                and chunk.chunk_id != best.chunk_id
+                and chunk.section
+                not in {"Introduction", "Purpose and scope", "Example"}
+                and score(chunk) > 0
             )
+            second = next(substantive, None)
             if second is not None:
                 chosen.append(second)
         if document.rank == 1:

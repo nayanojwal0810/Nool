@@ -36,7 +36,9 @@ citations. Status must be answered, partial, or unsupported."""
 
 PART_INSTRUCTIONS = """The user supplied two requested_parts. Return exactly two
 parts in the same order. Each part answers only its matching request and cites
-the evidence for that request. If a part has no support, set its status to
+the evidence for that request. Write each answer as a complete sentence with
+the subject and action, even when the request asks only when or where.
+If a part has no support, set its status to
 unsupported with an empty answer and citations. Do not repeat one part's
 answer as the other part. Return only the parts object."""
 

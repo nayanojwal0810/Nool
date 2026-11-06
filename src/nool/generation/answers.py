@@ -1,7 +1,7 @@
 """Answer company questions from current, authorized evidence."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Protocol
 
@@ -137,8 +137,25 @@ class CompanyAnswerService:
                 model_duration_ms,
             )
 
+        requested_parts = explicit_question_parts(question)
         try:
-            evidence = self.search.search(question.strip(), user_id, top_k=top_k)
+            original = self.search.search(question.strip(), user_id, top_k=top_k)
+            if requested_parts:
+                part_hits = [
+                    self.search.search(part, user_id, top_k=1)[0:1]
+                    for part in requested_parts
+                ]
+                candidates = [*part_hits[0], *part_hits[1], *original]
+                seen_documents: set[str] = set()
+                evidence = []
+                for item in candidates:
+                    if item.document_id not in seen_documents:
+                        seen_documents.add(item.document_id)
+                        evidence.append(replace(item, rank=len(evidence) + 1))
+                        if len(evidence) == top_k:
+                            break
+            else:
+                evidence = original
         except RuntimeError as exc:
             if "outdated" in str(exc):
                 return finish("unavailable", UPDATING, "stale_index")
@@ -176,7 +193,6 @@ class CompanyAnswerService:
             return finish("unsupported", NO_EVIDENCE, "evidence_changed")
         if not isinstance(response, dict):
             return finish("unsupported", NO_EVIDENCE, "invalid_response")
-        requested_parts = explicit_question_parts(question)
         if requested_parts:
             parts = response.get("parts")
             if not isinstance(parts, list) or len(parts) != len(requested_parts):

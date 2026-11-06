@@ -14,6 +14,7 @@ from nool.generation.answers import (
     UPDATING,
     CompanyAnswerService,
 )
+from nool.generation.evidence import select_answer_passages
 from nool.generation.ollama import OllamaAnswerModel
 from nool.generation.questions import explicit_question_parts
 from nool.retrieval.company import CompanySearchResult, corpus_fingerprint
@@ -293,6 +294,47 @@ def test_exception_passage_is_available_beside_the_policy(tmp_path: Path) -> Non
     assert result.citations[0].section == "Exceptions"
 
 
+def test_retrieved_procedure_is_kept_for_a_second_ranked_document(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "software.md"
+    source.write_text(
+        "# Software Guide\n\n## Policy\n\nOnly approved software may be used.\n\n"
+        "## Procedure\n\nSend the missing tool name and vendor to the service desk.\n\n"
+        "## Exceptions\n\nA missing tool may require additional review.",
+        encoding="utf-8",
+    )
+    store = DocumentStore(tmp_path / "documents.sqlite")
+    store.ingest(
+        source,
+        document_id="IT-007",
+        title="Software Guide",
+        owner="IT",
+        allowed_roles=["employee"],
+    )
+    procedure = next(
+        chunk
+        for chunk in store.current_chunks("IT-007")
+        if chunk.section == "Procedure"
+    )
+    hit = CompanySearchResult(
+        "IT-007",
+        "Software Guide",
+        procedure.chunk_id,
+        procedure.section,
+        procedure.page_number,
+        procedure.version,
+        procedure.text,
+        0.8,
+        2,
+        ("contriever",),
+    )
+    selected = select_answer_passages(
+        "How do I request review for a missing software tool?", [hit], store
+    )
+    assert procedure.chunk_id in {item.chunk_id for item in selected}
+
+
 def test_example_does_not_displace_exception_or_policy(tmp_path: Path) -> None:
     source = tmp_path / "visitors.md"
     source.write_text(
@@ -533,12 +575,20 @@ def test_two_parts_require_valid_evidence_from_each_document(tmp_path: Path) -> 
         ],
     }
     question = "How much paid leave do I get and when is the calendar published?"
-    search = SearchStub(store, [leave, holiday])
+
+    class PartSearch(SearchStub):
+        def search(self, question: str, user_id: str, top_k: int = 5) -> list:
+            if question.startswith("when"):
+                return [holiday]
+            return [leave]
+
+    search = PartSearch(store, [leave])
     complete = CompanyAnswerService(
         search, store, ModelStub({"parts": [supported(leave), holiday_part]})
     ).answer(question, "employee_demo")
     assert complete.status == "answered"
     assert {item.document_id for item in complete.citations} == {"PEO-001", "PEO-003"}
+    assert complete.retrieved_document_ids == ("PEO-001", "PEO-003")
 
     invalid_part = {
         **holiday_part,
