@@ -87,5 +87,6 @@ experiments/
 !.env.example
 
 # Internal blueprints and planning documents
+.internal/
 *blueprint*
 Nool_Blueprint.txt

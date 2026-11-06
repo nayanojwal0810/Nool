@@ -27,4 +27,4 @@ The 170 prepared questions cover direct answers, reworded questions, missing ans
 
 ## Code layout
 
-`src/nool/data` prepares the public search sample. `src/nool/retrieval` contains BM25, Contriever, and hybrid search. `src/nool/evaluation` checks data and calculates search metrics. `configs/app.yaml` stores current settings. The `evidence`, `security`, `generation`, and `app` packages are reserved for the intended application.
+`src/nool/data` prepares the public search sample and company documents. `src/nool/retrieval` contains BM25, Contriever, and hybrid search. `src/nool/evaluation` checks data and calculates search metrics. `src/nool/generation` builds cited answers. `configs/app.yaml` stores current settings.
